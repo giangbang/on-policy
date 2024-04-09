@@ -60,11 +60,12 @@ class SharedReplayBuffer(object):
             dtype=np.float32)
         self.rnn_states_critic = np.zeros_like(self.rnn_states)
 
+        # change the number of value predict from 1 to num_agents
         self.value_preds = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1, num_agents), dtype=np.float32)
         self.returns = np.zeros_like(self.value_preds)
         self.advantages = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, 1, num_agents), dtype=np.float32)
 
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
@@ -110,7 +111,7 @@ class SharedReplayBuffer(object):
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
-        self.value_preds[self.step] = value_preds.copy()
+        self.value_preds[:, self.step] = value_preds.copy()
         self.rewards[self.step] = rewards.copy()
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
@@ -145,7 +146,7 @@ class SharedReplayBuffer(object):
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
-        self.value_preds[self.step] = value_preds.copy()
+        self.value_preds[:, self.step] = value_preds.copy()
         self.rewards[self.step] = rewards.copy()
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
@@ -176,7 +177,7 @@ class SharedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
-    def compute_returns(self, next_value, value_normalizer=None):
+    def compute_returns(self, next_value, value_normalizer=None, agent_id=0):
         """
         Compute returns either as discounted sum of rewards, or using GAE.
         :param next_value: (np.ndarray) value predictions for the step after the last episode step.
@@ -184,23 +185,23 @@ class SharedReplayBuffer(object):
         """
         if self._use_proper_time_limits:
             if self._use_gae:
-                self.value_preds[-1] = next_value
+                self.value_preds[-1, ..., agent_id] = next_value
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
                         # step + 1
                         delta = self.rewards[step] + self.gamma * value_normalizer.denormalize(
-                            self.value_preds[step + 1]) * self.masks[step + 1] \
-                                - value_normalizer.denormalize(self.value_preds[step])
+                            self.value_preds[step + 1, ..., agent_id]) * self.masks[step + 1] \
+                                - value_normalizer.denormalize(self.value_preds[step, ..., agent_id])
                         gae = delta + self.gamma * self.gae_lambda * gae * self.masks[step + 1]
                         gae = gae * self.bad_masks[step + 1]
-                        self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                        self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step, ..., agent_id])
                     else:
-                        delta = self.rewards[step] + self.gamma * self.value_preds[step + 1] * self.masks[step + 1] - \
-                                self.value_preds[step]
+                        delta = self.rewards[step] + self.gamma * self.value_preds[step + 1, ..., agent_id] * self.masks[step + 1] - \
+                                self.value_preds[step, ..., agent_id]
                         gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
                         gae = gae * self.bad_masks[step + 1]
-                        self.returns[step] = gae + self.value_preds[step]
+                        self.returns[step] = gae + self.value_preds[step, ..., agent_id]
             else:
                 self.returns[-1] = next_value
                 for step in reversed(range(self.rewards.shape[0])):
@@ -208,20 +209,20 @@ class SharedReplayBuffer(object):
                         self.returns[step] = (self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[
                             step]) * self.bad_masks[step + 1] \
                                              + (1 - self.bad_masks[step + 1]) * value_normalizer.denormalize(
-                            self.value_preds[step])
+                            self.value_preds[step, ..., agent_id])
                     else:
                         self.returns[step] = (self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[
                             step]) * self.bad_masks[step + 1] \
-                                             + (1 - self.bad_masks[step + 1]) * self.value_preds[step]
+                                             + (1 - self.bad_masks[step + 1]) * self.value_preds[step, ..., agent_id]
         else:
             if self._use_gae:
-                self.value_preds[-1] = next_value
+                self.value_preds[-1, ..., agent_id] = next_value
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
                         if self.algo == "mat" or self.algo == "mat_dec":
-                            value_t = value_normalizer.denormalize(self.value_preds[step])
-                            value_t_next = value_normalizer.denormalize(self.value_preds[step + 1])
+                            value_t = value_normalizer.denormalize(self.value_preds[step, ..., agent_id])
+                            value_t_next = value_normalizer.denormalize(self.value_preds[step + 1, ..., agent_id])
                             rewards_t = self.rewards[step]
 
                             # mean_v_t = np.mean(value_t, axis=-2, keepdims=True)
@@ -234,28 +235,28 @@ class SharedReplayBuffer(object):
                             self.returns[step] = gae + value_t
                         else:
                             delta = self.rewards[step] + self.gamma * value_normalizer.denormalize(
-                                self.value_preds[step + 1]) * self.masks[step + 1] \
-                                    - value_normalizer.denormalize(self.value_preds[step])
+                                self.value_preds[step + 1, ..., agent_id]) * self.masks[step + 1] \
+                                    - value_normalizer.denormalize(self.value_preds[step, ..., agent_id])
                             gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
-                            self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                            self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step, ..., agent_id])
                     else:
                         if self.algo == "mat" or self.algo == "mat_dec":
                             rewards_t = self.rewards[step]
-                            mean_v_t = np.mean(self.value_preds[step], axis=-2, keepdims=True)
-                            mean_v_t_next = np.mean(self.value_preds[step + 1], axis=-2, keepdims=True)
+                            mean_v_t = np.mean(self.value_preds[step, ..., agent_id], axis=-2, keepdims=True)
+                            mean_v_t_next = np.mean(self.value_preds[step + 1, ..., agent_id], axis=-2, keepdims=True)
                             delta = rewards_t + self.gamma * self.masks[step + 1] * mean_v_t_next - mean_v_t
 
                             # delta = rewards_t + self.gamma * self.value_preds[step + 1] * \
                             #         self.masks[step + 1] - self.value_preds[step]
                             gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
                             self.advantages[step] = gae
-                            self.returns[step] = gae + self.value_preds[step]
+                            self.returns[step] = gae + self.value_preds[step, ..., agent_id]
 
                         else:
-                            delta = self.rewards[step] + self.gamma * self.value_preds[step + 1] * \
-                                    self.masks[step + 1] - self.value_preds[step]
+                            delta = self.rewards[step] + self.gamma * self.value_preds[step + 1, ..., agent_id] * \
+                                    self.masks[step + 1] - self.value_preds[step, ..., agent_id]
                             gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
-                            self.returns[step] = gae + self.value_preds[step]
+                            self.returns[step] = gae + self.value_preds[step, ..., agent_id]
             else:
                 self.returns[-1] = next_value
                 for step in reversed(range(self.rewards.shape[0])):

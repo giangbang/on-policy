@@ -125,7 +125,7 @@ class R_Critic(nn.Module):
     :param cent_obs_space: (gym.Space) (centralized) observation space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
-    def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
+    def __init__(self, args, cent_obs_space, num_agents, device=torch.device("cpu")):
         super(R_Critic, self).__init__()
         self.hidden_size = args.hidden_size
         self._use_orthogonal = args.use_orthogonal
@@ -133,6 +133,7 @@ class R_Critic(nn.Module):
         self._use_recurrent_policy = args.use_recurrent_policy
         self._recurrent_N = args.recurrent_N
         self._use_popart = args.use_popart
+        self.num_agents = num_agents
         self.tpdv = dict(dtype=torch.float32, device=device)
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
@@ -146,10 +147,16 @@ class R_Critic(nn.Module):
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
 
+        # if self._use_popart:
+        #     self.v_out = init_(PopArt(self.hidden_size, self.num_agents, device=device))
+        # else:
+        #     self.v_out = init_(nn.Linear(self.hidden_size, self.num_agents))
         if self._use_popart:
             self.v_out = init_(PopArt(self.hidden_size, 1, device=device))
         else:
             self.v_out = init_(nn.Linear(self.hidden_size, 1))
+
+        # output the value function for all agents
 
         self.to(device)
 
@@ -171,5 +178,5 @@ class R_Critic(nn.Module):
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
         values = self.v_out(critic_features)
-
+        
         return values, rnn_states

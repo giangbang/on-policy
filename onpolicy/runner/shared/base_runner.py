@@ -50,6 +50,7 @@ class Runner(object):
         self.model_dir = self.all_args.model_dir
 
         if self.use_wandb:
+            import wandb
             self.save_dir = str(wandb.run.dir)
             self.run_dir = str(wandb.run.dir)
         else:
@@ -79,7 +80,8 @@ class Runner(object):
         if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
             self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], self.num_agents, device = self.device)
         else:
-            self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], device = self.device)
+            self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], self.num_agents, device = self.device)
+
 
         if self.model_dir is not None:
             self.restore(self.model_dir)
@@ -130,7 +132,9 @@ class Runner(object):
                                                         np.concatenate(self.buffer.rnn_states_critic[-1]),
                                                         np.concatenate(self.buffer.masks[-1]))
         next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
-        self.buffer.compute_returns(next_values, self.trainer.value_normalizer)
+        # [self.n_rollout_threads , -1 , ...]
+        for i in range(self.num_agents):
+            self.buffer.compute_returns(next_values, self.trainer.value_normalizer, i)
     
     def train(self):
         """Train policies with data in buffer. """
