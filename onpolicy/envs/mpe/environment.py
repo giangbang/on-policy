@@ -135,10 +135,10 @@ class MultiAgentEnv(gym.Env):
                 info['fail'] = env_info['fail']
             info_n.append(info)
 
-        # all agents get total reward in cooperative case, if shared reward, all agents have the same reward, and reward is sum
-        reward = np.sum(reward_n)
-        if self.shared_reward:
-            reward_n = [[reward]] * self.n
+        # # all agents get total reward in cooperative case, if shared reward, all agents have the same reward, and reward is sum
+        # reward = np.sum(reward_n)
+        # if self.shared_reward:
+        #     reward_n = [[reward]] * self.n
 
         if self.post_step_callback is not None:
             self.post_step_callback(self.world)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os
-import wandb
+# import wandb
 import socket
 import setproctitle
 import numpy as np
@@ -102,7 +102,8 @@ def main(args):
         os.makedirs(str(run_dir))
 
     # wandb
-    if all_args.use_wandb:
+    # if all_args.use_wandb:
+    if False:
         run = wandb.init(config=all_args,
                          project=all_args.env_name,
                          entity=all_args.user_name,
@@ -163,7 +164,8 @@ def main(args):
     if all_args.use_eval and eval_envs is not envs:
         eval_envs.close()
 
-    if all_args.use_wandb:
+    # if all_args.use_wandb:
+    if False:
         run.finish()
     else:
         runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
