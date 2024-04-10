@@ -61,10 +61,10 @@ class SharedReplayBuffer(object):
         self.rnn_states_critic = np.zeros_like(self.rnn_states)
 
         self.value_preds = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length + 1, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
         self.returns = np.zeros_like(self.value_preds)
         self.advantages = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
 
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
@@ -79,7 +79,7 @@ class SharedReplayBuffer(object):
         self.action_log_probs = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
         self.rewards = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
@@ -111,7 +111,7 @@ class SharedReplayBuffer(object):
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = rewards.copy()
+        self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
@@ -146,7 +146,7 @@ class SharedReplayBuffer(object):
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = rewards.copy()
+        self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()

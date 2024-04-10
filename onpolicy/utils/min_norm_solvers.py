@@ -74,11 +74,14 @@ class MinNormSolver:
         return np.maximum(y - tmax_f, np.zeros(y.shape))
     
     def _next_point(cur_val, grad, n):
+        if torch.is_tensor(cur_val):
+            cur_val = cur_val.cpu().numpy()
+        
         proj_grad = grad - ( np.sum(grad) / n )
         tm1 = -1.0*cur_val[proj_grad<0]/proj_grad[proj_grad<0]
         tm2 = (1.0 - cur_val[proj_grad>0])/(proj_grad[proj_grad>0])
         
-        skippers = np.sum(tm1<1e-7) + np.sum(tm2<1e-7)
+        # skippers = np.sum(tm1<1e-7) + np.sum(tm2<1e-7)
         t = 1
         if len(tm1[tm1>1e-7]) > 0:
             t = np.min(tm1[tm1>1e-7])
@@ -132,6 +135,9 @@ class MinNormSolver:
             nc, nd = MinNormSolver._min_norm_element_from2(v1v1, v1v2, v2v2)
             new_sol_vec = nc*sol_vec + (1-nc)*new_point
             change = new_sol_vec - sol_vec
+
+            if torch.is_tensor(change):
+                change = change.cpu().numpy()
             if np.sum(np.abs(change)) < MinNormSolver.STOP_CRIT:
                 return sol_vec, nd
             sol_vec = new_sol_vec
@@ -175,6 +181,8 @@ class MinNormSolver:
             new_sol_vec[t_iter] += 1 - nc
 
             change = new_sol_vec - sol_vec
+            if torch.is_tensor(change):
+                change = change.cpu().numpy()
             if np.sum(np.abs(change)) < MinNormSolver.STOP_CRIT:
                 return sol_vec, nd
             sol_vec = new_sol_vec

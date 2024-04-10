@@ -1,4 +1,5 @@
 import numpy as np
+from torch.autograd import Variable
 import torch
 import torch.nn as nn
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
@@ -46,7 +47,7 @@ class R_MAPPO():
         if self._use_popart:
             self.value_normalizer = self.policy.critic.v_out
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(1).to(self.device)
+            self.value_normalizer = ValueNorm(self.policy.num_agents).to(self.device)
         else:
             self.value_normalizer = None
 
@@ -91,7 +92,7 @@ class R_MAPPO():
 
     def ppo_loss(self, a, imp_weights, adv_targ, active_masks_batch, dist_entropy):
         surr1 = imp_weights * adv_targ[..., a]
-        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ[..., a]
 
         if self._use_policy_active_masks:
             policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
@@ -145,7 +146,7 @@ class R_MAPPO():
         n_agents = values.shape[-1]
         # actor update
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
-        policy_grads = [[] * n_agents]
+        policy_grads = {}
         for a in range(n_agents):
 
             self.policy.actor_optimizer.zero_grad()
@@ -171,10 +172,11 @@ class R_MAPPO():
             #     actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
             policy_loss = self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
             policy_loss.backward(retain_graph=True)
-                            
-            for param in self.policy.parameters():
+            policy_grads[a] = []
+
+            for param in self.policy.actor.parameters():
                 if param.grad is not None:
-                    policy_grads[a].append(param.grad.data.clone(), requires_grad=False)
+                    policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
 
         gn = gradient_normalizers(policy_grads, None, 'l2')
         for t in range(n_agents):
@@ -182,10 +184,8 @@ class R_MAPPO():
                 policy_grads[t][gr_i] = policy_grads[t][gr_i] / gn[t]
             
         # Frank-Wolfe iteration to compute scales.
-        sol, min_norm = MinNormSolver.find_min_norm_element([policy_grads[t] for t in range(n_agents)])
-        scale = [[] * n_agents]
-        for i in range(n_agents):
-            scale[i] = float(sol[i])
+        sol, _ = MinNormSolver.find_min_norm_element([policy_grads[t] for t in range(n_agents)])
+        scale = sol
         
         self.policy.actor_optimizer.zero_grad()
         loss = 0
@@ -224,7 +224,8 @@ class R_MAPPO():
         else:
             advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
         advantages_copy = advantages.copy()
-        advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
+        active_masks = (buffer.active_masks[:-1] == 0.0).repeat(advantages_copy.shape[-1], axis=-1)
+        advantages_copy[active_masks] = np.nan
         mean_advantages = np.nanmean(advantages_copy)
         std_advantages = np.nanstd(advantages_copy)
         advantages = (advantages - mean_advantages) / (std_advantages + 1e-5)
