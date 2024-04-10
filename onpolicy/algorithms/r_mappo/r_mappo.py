@@ -4,6 +4,7 @@ import torch.nn as nn
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
+from onpolicy.utils.min_norm_solvers import MinNormSolver, gradient_normalizers
 
 class R_MAPPO():
     """
@@ -88,6 +89,26 @@ class R_MAPPO():
 
         return value_loss
 
+    def ppo_loss(self, a, imp_weights, adv_targ, active_masks_batch, dist_entropy):
+        surr1 = imp_weights * adv_targ[..., a]
+        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+
+        if self._use_policy_active_masks:
+            policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
+                                            dim=-1,
+                                            keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+        else:
+            policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+
+        policy_loss = policy_action_loss - dist_entropy * self.entropy_coef
+        
+        if self._use_max_grad_norm:
+            nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
+
+        return policy_loss
+
+
+
     def ppo_update(self, sample, update_actor=True):
         """
         Update actor and critic networks.
@@ -120,31 +141,58 @@ class R_MAPPO():
                                                                               masks_batch, 
                                                                               available_actions_batch,
                                                                               active_masks_batch)
+        
+        n_agents = values.shape[-1]
         # actor update
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
+        policy_grads = [[] * n_agents]
+        for a in range(n_agents):
 
-        surr1 = imp_weights * adv_targ
-        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+            self.policy.actor_optimizer.zero_grad()
 
-        if self._use_policy_active_masks:
-            policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
-                                             dim=-1,
-                                             keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
-        else:
-            policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+            # surr1 = imp_weights * adv_targ[..., a]
+            # surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
-        policy_loss = policy_action_loss
+            # if self._use_policy_active_masks:
+            #     policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
+            #                                     dim=-1,
+            #                                     keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+            # else:
+            #     policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
 
+            # policy_loss = policy_action_loss
+
+            # self.policy.actor_optimizer.zero_grad()
+
+            # if update_actor:
+            #     (policy_loss - dist_entropy * self.entropy_coef).backward(retain_graph=True)
+
+            # if self._use_max_grad_norm:
+            #     actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
+            policy_loss = self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
+            policy_loss.backward(retain_graph=True)
+                            
+            for param in self.policy.parameters():
+                if param.grad is not None:
+                    policy_grads[a].append(param.grad.data.clone(), requires_grad=False)
+
+        gn = gradient_normalizers(policy_grads, None, 'l2')
+        for t in range(n_agents):
+            for gr_i in range(len(policy_grads[t])):
+                policy_grads[t][gr_i] = policy_grads[t][gr_i] / gn[t]
+            
+        # Frank-Wolfe iteration to compute scales.
+        sol, min_norm = MinNormSolver.find_min_norm_element([policy_grads[t] for t in range(n_agents)])
+        scale = [[] * n_agents]
+        for i in range(n_agents):
+            scale[i] = float(sol[i])
+        
         self.policy.actor_optimizer.zero_grad()
-
-        if update_actor:
-            (policy_loss - dist_entropy * self.entropy_coef).backward()
-
-        if self._use_max_grad_norm:
-            actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
-        else:
-            actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
-
+        loss = 0
+        for a in range(n_agents):
+            loss = loss + scale[a]*self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
+        loss.backward()
+        actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
         self.policy.actor_optimizer.step()
 
         # critic update

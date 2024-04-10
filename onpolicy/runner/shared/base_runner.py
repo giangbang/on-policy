@@ -133,8 +133,8 @@ class Runner(object):
                                                         np.concatenate(self.buffer.masks[-1]))
         next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
         # [self.n_rollout_threads , -1 , ...]
-        for i in range(self.num_agents):
-            self.buffer.compute_returns(next_values, self.trainer.value_normalizer, i)
+        
+        self.buffer.compute_returns(next_values, self.trainer.value_normalizer)
     
     def train(self):
         """Train policies with data in buffer. """

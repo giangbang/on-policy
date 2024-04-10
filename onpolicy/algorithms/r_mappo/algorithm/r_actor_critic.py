@@ -147,14 +147,14 @@ class R_Critic(nn.Module):
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
 
-        # if self._use_popart:
-        #     self.v_out = init_(PopArt(self.hidden_size, self.num_agents, device=device))
-        # else:
-        #     self.v_out = init_(nn.Linear(self.hidden_size, self.num_agents))
         if self._use_popart:
-            self.v_out = init_(PopArt(self.hidden_size, 1, device=device))
+            self.v_out = init_(PopArt(self.hidden_size, self.num_agents, device=device))
         else:
-            self.v_out = init_(nn.Linear(self.hidden_size, 1))
+            self.v_out = init_(nn.Linear(self.hidden_size, self.num_agents))
+        # if self._use_popart:
+        #     self.v_out = init_(PopArt(self.hidden_size, 1, device=device))
+        # else:
+        #     self.v_out = init_(nn.Linear(self.hidden_size, 1))
 
         # output the value function for all agents
 
@@ -178,5 +178,7 @@ class R_Critic(nn.Module):
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
         values = self.v_out(critic_features)
+        print("inside", values.shape)
+        print("inside", cent_obs.shape)
         
         return values, rnn_states
