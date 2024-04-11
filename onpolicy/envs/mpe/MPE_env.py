@@ -1,5 +1,5 @@
-from .environment import MultiAgentEnv
-from .scenarios import load
+from onpolicy.envs.mpe.environment import MultiAgentEnv
+from onpolicy.envs.mpe.scenarios import load
 
 
 def MPEEnv(args):
@@ -27,5 +27,24 @@ def MPEEnv(args):
     # create multiagent environment
     env = MultiAgentEnv(world, scenario.reset_world,
                         scenario.reward, scenario.observation, scenario.info)
-
     return env
+
+if __name__ == "__main__":
+    args = {
+        "scenario_name": "simple_spread",
+        "episode_length": 25,
+        "num_agents": 2,
+        "num_landmarks": 3
+    }
+    from argparse import Namespace
+    args = Namespace(**args)
+    env = MPEEnv(args)
+
+    print(env.reset())
+    ac = []
+    for i in range(2):
+        ac.append(env.action_space[i].sample())
+    import numpy as np
+    ac = np.array(ac)[None, ...]
+    print(ac)
+    print(env.step(ac))

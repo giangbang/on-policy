@@ -111,7 +111,11 @@ class SharedReplayBuffer(object):
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
+        # shape: n_thread x n_agent x n_agent
+        print(rewards.shape)
+        self.rewards[self.step] = np.tile(rewards.squeeze(-1), self.rewards.shape[-1]).reshape(*self.rewards.shape[1:])
+        # self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
+        # print("rewards", rewards, "tile reward", self.rewards[self.step])
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
@@ -606,3 +610,4 @@ class SharedReplayBuffer(object):
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
                   adv_targ, available_actions_batch
+
