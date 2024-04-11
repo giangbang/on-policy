@@ -118,7 +118,6 @@ class MatrixGameRunner(Runner):
                     actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
         elif self.envs.action_space[0].__class__.__name__ == 'Discrete':
             actions_env = actions.squeeze(-1)
-            print(actions_env.shape)
         else:
             raise NotImplementedError
 

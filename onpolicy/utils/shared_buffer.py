@@ -112,7 +112,6 @@ class SharedReplayBuffer(object):
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
         # shape: n_thread x n_agent x n_agent
-        print(rewards.shape)
         self.rewards[self.step] = np.tile(rewards.squeeze(-1), self.rewards.shape[-1]).reshape(*self.rewards.shape[1:])
         # self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
         # print("rewards", rewards, "tile reward", self.rewards[self.step])
