@@ -278,6 +278,8 @@ class Warehouse(gym.Env):
             # FLATTENED observations as well
             self._use_slow_obs()
 
+        self.share_observation_space = []
+
         # for performance reasons we
         # can flatten the obs vector
         if observation_type == ObserationType.FLATTENED:
@@ -463,6 +465,10 @@ class Warehouse(gym.Env):
             ]
 
         self.observation_space = spaces.Tuple(tuple(ma_spaces))
+        share_obs_dim = flatdim * self.n_agents
+        self.share_observation_space = [spaces.Box(
+            low=-float("inf"), high=float("inf"), shape=(share_obs_dim,), dtype=np.float32
+        ) for _ in range(self.n_agents)]
 
     def _is_highway(self, x: int, y: int) -> bool:
         return self.highways[y, x]

@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from rware import Action
+from onpolicy.envs.rware import Action
 from gym import spaces
 from gym import ObservationWrapper
 

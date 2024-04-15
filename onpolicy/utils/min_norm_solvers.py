@@ -99,6 +99,8 @@ class MinNormSolver:
         It is quite geometric, and the main idea is the fact that if d_{ij} = min |u|_2 st u = c x_i + (1-c) x_j; the solution lies in (0, d_{i,j})
         Hence, we find the best 2-task solution, and then run the projected gradient descent until convergence
         """
+        if len(vecs) < 2:
+            return np.ones(len(vecs)), 0
         # Solution lying at the combination of two points
         dps = {}
         init_sol, dps = MinNormSolver._min_norm_2d(vecs, dps)
