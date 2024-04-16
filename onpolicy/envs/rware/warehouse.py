@@ -712,7 +712,7 @@ class Warehouse(gym.Env):
     def step(
         self, actions: List[Action]
     ) -> Tuple[List[np.ndarray], List[float], List[bool], Dict]:
-        assert len(actions) == len(self.agents)
+        assert len(actions) == len(self.agents), f"{len(actions)} {len(self.agents)}"
 
         for agent, action in zip(self.agents, actions):
             if self.msg_bits > 0:
@@ -851,6 +851,8 @@ class Warehouse(gym.Env):
 
         new_obs = tuple([self._make_obs(agent) for agent in self.agents])
         info = {}
+        rewards = np.mean(rewards)
+        rewards = [rewards for _ in range(self.n_agents)]
         return new_obs, list(rewards), dones, info
 
     def render(self, mode="human"):

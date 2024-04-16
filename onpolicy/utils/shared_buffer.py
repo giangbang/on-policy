@@ -65,7 +65,6 @@ class SharedReplayBuffer(object):
         self.returns = np.zeros_like(self.value_preds)
         self.advantages = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
-
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
                                              dtype=np.float32)
@@ -370,12 +369,12 @@ class SharedReplayBuffer(object):
         actions = self.actions.reshape(-1, self.actions.shape[-1])
         if self.available_actions is not None:
             available_actions = self.available_actions[:-1].reshape(-1, self.available_actions.shape[-1])
-        value_preds = self.value_preds[:-1].reshape(-1, 1)
-        returns = self.returns[:-1].reshape(-1, 1)
+        value_preds = self.value_preds[:-1].reshape(-1, self.value_preds.shape[-1])
+        returns = self.returns[:-1].reshape(-1, self.returns.shape[-1])
         masks = self.masks[:-1].reshape(-1, 1)
         active_masks = self.active_masks[:-1].reshape(-1, 1)
         action_log_probs = self.action_log_probs.reshape(-1, self.action_log_probs.shape[-1])
-        advantages = advantages.reshape(-1, 1)
+        advantages = advantages.reshape(-1, advantages.shape[-1])
 
         for indices in sampler:
             # obs size [T+1 N M Dim]-->[T N M Dim]-->[T*N*M,Dim]-->[index,Dim]

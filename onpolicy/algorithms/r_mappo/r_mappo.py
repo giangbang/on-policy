@@ -61,6 +61,7 @@ class R_MAPPO():
 
         :return value_loss: (torch.Tensor) value function loss.
         """
+        assert values.shape == value_preds_batch.shape, f"{values.shape}, {value_preds_batch.shape}"
         value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
                                                                                         self.clip_param)
         if self._use_popart or self._use_valuenorm:
@@ -92,6 +93,9 @@ class R_MAPPO():
 
     def ppo_loss(self, a, imp_weights, adv_targ, active_masks_batch, dist_entropy):
         # assert imp_weights.shape == adv_targ[..., a].shape, "{} {}".format(imp_weights.shape, adv_targ[..., a].shape)
+        # print(adv_targ.shape) # torch.Size([10000, 1]) mappo, torch.Size([10000, 2]) rmappo
+
+
         adv_targ = adv_targ[..., a].unsqueeze(-1)
         assert adv_targ.shape == imp_weights.shape
         surr1 = imp_weights * adv_targ
@@ -184,8 +188,10 @@ class R_MAPPO():
                 if param.grad is not None:
                     policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
 
-        filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 1e-1]
-        if len(filter_grad_indx) < len(policy_grads): print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
+        filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 1e-3]
+        # if len(filter_grad_indx) < len(policy_grads): 
+        #     print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
+
         # gn = gradient_normalizers(policy_grads, None, 'l2')
         # for t in filter_grad_indx:
         #     for gr_i in range(len(policy_grads[t])):

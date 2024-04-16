@@ -1,7 +1,7 @@
 #!/bin/sh
 env="RWARE"
 scenario="rware-tiny-2ag-v1" 
-algo="rmappo" #"mappo" "ippo"
+algo="mappo" #"mappo" "ippo"
 exp="check"
 seed_max=1
 
@@ -11,6 +11,6 @@ do
     echo "seed is ${seed}:"
     CUDA_VISIBLE_DEVICES=0 python ../train/train_rware.py --env_name ${env} --algorithm_name ${algo} --experiment_name ${exp} \
     --scenario ${scenario} --seed ${seed} \
-    --n_training_threads 1 --n_rollout_threads 10 --num_mini_batch 1 --episode_length 25 --num_env_steps 2000000 \
-    --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 3e-4 --critic_lr 7e-4 --wandb_name "xxx" --user_name "_" --cuda
+    --n_training_threads 1 --n_rollout_threads 10 --num_mini_batch 1 --episode_length 500 --num_env_steps 10_000_000 \
+    --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 5e-4 --critic_lr 5e-4 --wandb_name "xxx" --user_name "_" --cuda --use_eval --deterministic_eval
 done
