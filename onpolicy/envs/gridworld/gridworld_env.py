@@ -3,6 +3,7 @@ import sys
 import os
 from enum import Enum
 import copy
+import gym
 import numpy as np
 import matplotlib.pyplot as plt
 import pkg_resources
@@ -97,7 +98,7 @@ class GridworldEnv:
         self.n_agents = len(self.agent_list)
         self.n_actions = len(self.action_pos_dict)
 
-        self.action_space = spaces.Tuple([spaces.Discrete(5, seed=seed) for _ in range(self.n_agents)] )
+        self.action_space = spaces.Tuple([spaces.Discrete(5) for _ in range(self.n_agents)] )
 
         # seeding
         self.seed(seed)
@@ -107,7 +108,7 @@ class GridworldEnv:
         self.collected_goal = 0
         self._cur_step = 0
 
-        self.goal_reward = 1
+        self.goal_reward = 10
         self.collision_penalty = 0.1
 
         self.setup_grid_agent()
@@ -122,8 +123,9 @@ class GridworldEnv:
                                                           np.ones(self.observation_shape, dtype=float))
                                                for _ in range(len(self.agent_list))
                                                ])
-        self.shared_observation_space = spaces.Tuple([spaces.Box(np.zeros(self.observation_shape*self.n_agents, dtype=float),
-                                                          np.ones(self.observation_shape*self.n_agents, dtype=float))
+        self.state_dim = np.prod(self.grid_map_shape) * 3
+        self.share_observation_space = spaces.Tuple([spaces.Box(np.zeros(self.state_dim, dtype=float),
+                                                          np.ones(self.state_dim, dtype=float))
                                                for _ in range(len(self.agent_list))
                                                ])
 
@@ -131,6 +133,23 @@ class GridworldEnv:
         self.agent_grid = np.zeros(self.grid_map_shape, dtype=bool)
         for agent in self.current_agent_list:
             self.agent_grid[agent.x][agent.y] = 1
+
+    def get_state(self):
+        state = np.zeros((*self.grid_map_shape, 3), dtype=int)
+        # the first layer is the layout of the map (only wall and door)
+        # the second layer is the agent positions
+        # the third layer include passable objects, include goals, opened door status
+        for i in range(self.grid_map_shape[0]):
+            for j in range(self.grid_map_shape[1]):
+                current_cell = self.get(i, j)
+                if current_cell.type == WALL or current_cell.type == DOOR:
+                    state[i, j, 0] = current_cell.type
+                else: state[i, j, 2] = current_cell.type
+                if current_cell.type == DOOR and current_cell.open:
+                    state[i, j, 2] = OPENED_DOOR
+        state[..., 1] = self.agent_grid
+        return state.reshape(-1)
+
 
     def get_obs(self, agent):
         obs = np.zeros(self.observation_shape, dtype=float)
@@ -160,7 +179,7 @@ class GridworldEnv:
         return obs
 
     def step(self, actions):
-        rewards = np.zeros(self.n_agents, dtype=float)
+        rewards = np.zeros((self.n_agents, 1), dtype=float)
         self._cur_step += 1
 
         # here are the list of changes to the grid map
@@ -188,21 +207,20 @@ class GridworldEnv:
             current_cell = self.get(agent.x, agent.y)     
             next_cell = self.get(*next_step)
 
-            if agent.target is not None and (next_step == agent.target).all():
-                rewards[i] += self.goal_reward
-                # TARAGET disappear after the agent takes it
-                list_of_change_queue.append(
-                    (
-                        *agent.target,
-                        WorldObj(*agent.target, EMPTY, canpassby=True)
-                    )
-                )
-                self.current_goal_on_map -= 1
-                agent.target = None
+            # if agent.target is not None and (next_step == agent.target).all():
+            #     rewards[i] += self.goal_reward
+            #     # TARAGET disappear after the agent takes it
+            #     list_of_change_queue.append(
+            #         (
+            #             *agent.target,
+            #             WorldObj(*agent.target, EMPTY, canpassby=True)
+            #         )
+            #     )
+            #     self.current_goal_on_map -= 1
+            #     agent.target = None
 
-            elif next_cell.type == DOOR:
-                if next_cell.open:
-                    can_move_to = True
+            if next_cell.type == DOOR and next_cell.open:
+                can_move_to = True
                 # if the door is not open, the agent will still be penalized at the next `if` check
             elif not next_cell.canpassby: 
                 # collide to wall, doors
@@ -233,8 +251,9 @@ class GridworldEnv:
                 agent.x = next_step[0]
                 agent.y = next_step[1]
 
-            if next_cell.type == SWITCH:
-                door_cell = copy.deepcopy(self.get(*next_cell.target))
+            current_cell = self.get(agent.x, agent.y)
+            if current_cell.type == SWITCH:
+                door_cell = copy.deepcopy(self.get(*current_cell.target))
                 door_cell.open = True
                 list_of_change_queue.append(
                     (
@@ -244,16 +263,35 @@ class GridworldEnv:
                     )
                 )
 
+            if current_cell.type == TARGET:
+                agent_target = agent.target
+                if agent_target is None: continue
+                if not (agent_target == np.array([current_cell.x, current_cell.y], dtype=int)).all():
+                    continue
+                rewards[i] += self.goal_reward
+                # TARAGET disappear after the agent takes it
+                list_of_change_queue.append(
+                    (
+                        *agent_target,
+                        WorldObj(*agent.target, EMPTY, canpassby=True)
+                    )
+                )
+                self.current_goal_on_map -= 1
+                agent.target = None
+
+
         # update the changes to take effect in the actual grid map
         for change in list_of_change_queue:
-            self.set(*change)
+            self.current_grid_map[change[0], change[1]] = change[2]
         
         self.setup_grid_agent()
         obses = []
         for agent in self.current_agent_list:
             obses.append(self.get_obs(agent))
+        state = self.get_state()
+        avail_actions = self.get_avail_actions()
         done = self.current_goal_on_map == 0 or self._cur_step > self.max_step
-        return obses, rewards, [done]*self.n_agents, {}
+        return obses, [state]*self.n_agents, rewards, [done]*self.n_agents, {}, avail_actions
 
 
     def get_avail_actions(self):
@@ -263,23 +301,31 @@ class GridworldEnv:
         return ret
 
     def get(self, i, j):
-        return self.grid_map[i, j]
+        return self.current_grid_map[i, j]
 
     def get_avail_agent_actions(self, i):
-        avail = np.zeros(len(self.agent_list), dtype=bool)
-        avail[NOOP] = True
+        """
+        this function reward a list of available actions for the agent `i`
+        note that the agent can still take unavailable actions, but it is likely 
+        that these actions will be penalized (e.g. hit walls)
+        not all cases are checked, for example hitting other agents, so agents
+        can still collide if they take only available actions
+        """
+        avail = np.ones(self.n_actions, dtype=bool)
         agent = self.current_agent_list[i]
+        agent_coord = np.array([agent.x, agent.y], dtype=int)
 
-        for a in range(4):
-            next_step = agent + self.action_pos_dict[a]
+        for a in [LEFT, RIGHT, UP, DOWN]:
+            next_step = agent_coord + self.action_pos_dict[a]
             if next_step[0] < 0 or next_step[0] >= self.grid_map_shape[0] or \
                next_step[1] < 0 or next_step[1] >= self.grid_map_shape[1]:
+                avail[a] = False
                 continue
-            if (next_step == self.get(*agent).target).all(): 
-                avail[a] = 1
-            elif not self.grid_map[tuple(*next_step)].canpassby: 
-                continue
-            avail[a] = 1
+            next_cell = self.get(*next_step)
+            if next_cell.type == WALL:
+                avail[a] = 0
+            elif next_cell.type == DOOR and not next_cell.open:
+                avail[a] = False
         return avail
 
 
@@ -289,14 +335,16 @@ class GridworldEnv:
     def reset(self):
         self.current_grid_map = copy.deepcopy(self.start_grid_map)  # current grid map
 
-        self.current_agent_list = copy.deepcopy(self.agent_list)
+        self.current_agent_list = copy.deepcopy(self.start_agent_list)
         self.current_goal_on_map = self.n_goals
         self.setup_grid_agent()
         self._cur_step = 0
         obses = []
         for agent in self.current_agent_list:
             obses.append(self.get_obs(agent))
-        return obses
+        state = self.get_state()
+        avail_actions = self.get_avail_actions()
+        return obses, [state]*self.n_agents, avail_actions
     
     def set(self, i, j, v: WorldObj): 
         self.grid_map[i, j] = v
@@ -338,7 +386,7 @@ class GridworldEnv:
     
     def __repr__(self):
         ret = []
-        grid = copy.deepcopy(self.grid_map)
+        grid = copy.deepcopy(self.current_grid_map)
         for agent in self.current_agent_list:
             grid[agent.x][agent.y] = agent
         for row in grid:
@@ -381,7 +429,11 @@ if __name__ == "__main__":
         [DOWN, DOWN],
         [RIGHT, LEFT],
         [UP, LEFT],
-        [RIGHT, LEFT]
+        [RIGHT, LEFT],
+        [LEFT, NOOP],
+        [UP, NOOP], 
+        [LEFT, NOOP],
+        [LEFT, NOOP]
     ]
     for action in actions:
         all = env.step(action)
@@ -397,3 +449,7 @@ if __name__ == "__main__":
         print('='*10)
         print(env)
         print('='*10)
+    
+    print('='*10)
+    print(env.reset())
+    print(env)
