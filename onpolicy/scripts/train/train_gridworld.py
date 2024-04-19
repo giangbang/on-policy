@@ -18,7 +18,7 @@ def make_train_env(all_args):
         def init_env():
             if all_args.env_name == "Gridworld":
                 
-                env = GridworldEnv(all_args.plan)
+                env = GridworldEnv(all_args.plan, separated_rewards=all_args.seperated_rewards)
             else:
                 print("Can not support the " +
                       all_args.env_name + "environment.")
@@ -37,7 +37,7 @@ def make_eval_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "Gridworld":
-                env = GridworldEnv(all_args.plan)
+                env = GridworldEnv(all_args.plan, separated_rewards=all_args.seperated_rewards)
             else:
                 print("Can not support the " +
                       all_args.env_name + "environment.")
@@ -138,7 +138,7 @@ def main(args):
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
 
-    tmp_env = GridworldEnv(all_args.plan)
+    tmp_env = GridworldEnv(all_args.plan, separated_rewards=all_args.seperated_rewards)
     print('='*10)
     print(tmp_env)
     print('='*10)
@@ -157,7 +157,7 @@ def main(args):
     if all_args.share_policy:
         from onpolicy.runner.shared.gridworld_runner import GridworldRunner as Runner
     else:
-        from onpolicy.runner.separated.mpe_runner import MPERunner as Runner
+        from onpolicy.runner.separated.gridworld_runner import GridworldRunner as Runner
 
     runner = Runner(config)
     runner.run()

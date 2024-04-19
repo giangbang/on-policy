@@ -80,7 +80,7 @@ class GridworldRunner(Runner):
 
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
-        self.buffer.available_actions[0] = avail_actions.copy()
+        # self.buffer.available_actions[0] = avail_actions.copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -90,8 +90,7 @@ class GridworldRunner(Runner):
                             np.concatenate(self.buffer.obs[step]),
                             np.concatenate(self.buffer.rnn_states[step]),
                             np.concatenate(self.buffer.rnn_states_critic[step]),
-                            np.concatenate(self.buffer.masks[step]),
-                            np.concatenate(self.buffer.available_actions[step]))
+                            np.concatenate(self.buffer.masks[step]))
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
@@ -127,7 +126,7 @@ class GridworldRunner(Runner):
 
         # print("rw", rewards.shape)
         self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic, actions, 
-                           action_log_probs, values, rewards, masks, available_actions=avail_actions)
+                           action_log_probs, values, rewards, masks)
 
     @torch.no_grad()
     def eval(self, total_num_steps):
@@ -142,7 +141,6 @@ class GridworldRunner(Runner):
             eval_action, eval_rnn_states = self.trainer.policy.act(np.concatenate(eval_obs),
                                                 np.concatenate(eval_rnn_states),
                                                 np.concatenate(eval_masks),
-                                                np.concatenate(eval_available_actions),
                                                 deterministic=self.all_args.deterministic_eval)
             eval_actions = np.array(np.split(_t2n(eval_action), self.n_eval_rollout_threads))
             eval_rnn_states = np.array(np.split(_t2n(eval_rnn_states), self.n_eval_rollout_threads))
@@ -160,7 +158,7 @@ class GridworldRunner(Runner):
                 raise NotImplementedError
 
             # Obser reward and next obs
-            eval_obs, eval_rewards, eval_dones, eval_infos, eval_available_actions = self.eval_envs.step(eval_actions)
+            eval_obs, eval_share_obs, eval_rewards, eval_dones, eval_infos, eval_available_actions = self.eval_envs.step(eval_actions)
             eval_episode_rewards.append(eval_rewards)
 
             eval_rnn_states[eval_dones == True] = np.zeros(((eval_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)

@@ -1,14 +1,7 @@
-from re import X
-import sys
-import os
-from enum import Enum
 import copy
-import gym
 import numpy as np
-import matplotlib.pyplot as plt
 import pkg_resources
 import json
-from collections import OrderedDict
 from gym import spaces
 
 
@@ -70,11 +63,16 @@ class WorldObj:
 
 
 class GridworldEnv:
+    """
+    :param plan: the number of scenario to read from json file
+    :param separated_reward: whether the return rewards are different for each agent or to averaging them all
+    """
 
     def __init__(
             self,
             plan: int=1,
             seed: int=None,
+            separated_rewards:bool=False
     ):
         self.plan = plan
         self.max_step = 200
@@ -97,6 +95,8 @@ class GridworldEnv:
         self.grid_map_shape = self.start_grid_map.shape
         self.n_agents = len(self.agent_list)
         self.n_actions = len(self.action_pos_dict)
+
+        self.separated_rewards = separated_rewards
 
         self.action_space = spaces.Tuple([spaces.Discrete(5) for _ in range(self.n_agents)] )
 
@@ -180,6 +180,8 @@ class GridworldEnv:
 
     def step(self, actions):
         rewards = np.zeros((self.n_agents, 1), dtype=float)
+        actions = np.array(actions)
+        assert np.prod(actions.shape) == self.n_agents, f"Action of the shape {actions.shape} is not valid"
         self._cur_step += 1
 
         # here are the list of changes to the grid map
@@ -206,18 +208,6 @@ class GridworldEnv:
 
             current_cell = self.get(agent.x, agent.y)     
             next_cell = self.get(*next_step)
-
-            # if agent.target is not None and (next_step == agent.target).all():
-            #     rewards[i] += self.goal_reward
-            #     # TARAGET disappear after the agent takes it
-            #     list_of_change_queue.append(
-            #         (
-            #             *agent.target,
-            #             WorldObj(*agent.target, EMPTY, canpassby=True)
-            #         )
-            #     )
-            #     self.current_goal_on_map -= 1
-            #     agent.target = None
 
             if next_cell.type == DOOR and next_cell.open:
                 can_move_to = True
@@ -289,9 +279,23 @@ class GridworldEnv:
         for agent in self.current_agent_list:
             obses.append(self.get_obs(agent))
         state = self.get_state()
-        avail_actions = self.get_avail_actions()
-        done = self.current_goal_on_map == 0 or self._cur_step > self.max_step
-        return obses, [state]*self.n_agents, rewards, [done]*self.n_agents, {}, avail_actions
+        # avail_actions = self.get_avail_actions()
+        avail_actions=None
+
+        # done = self.current_goal_on_map == 0 or self._cur_step >= self.max_step
+        done = self._cur_step >= self.max_step
+        bad_transition = self._cur_step >= self.max_step
+
+        infos = [{} for _ in range(self.n_agents)]
+        # for i in range(self.n_agents):
+        #     infos[i] = {
+        #         "bad_transition": bad_transition,
+        #     }
+        if not self.separated_rewards:
+            rewards = np.sum(rewards)
+            rewards = np.array([rewards for _ in range(self.n_agents)])
+            rewards = rewards.reshape(-1, 1)
+        return obses, [state]*self.n_agents, rewards, [done]*self.n_agents, infos, avail_actions
 
 
     def get_avail_actions(self):
@@ -343,7 +347,8 @@ class GridworldEnv:
         for agent in self.current_agent_list:
             obses.append(self.get_obs(agent))
         state = self.get_state()
-        avail_actions = self.get_avail_actions()
+        # avail_actions = self.get_avail_actions()
+        avail_actions = None
         return obses, [state]*self.n_agents, avail_actions
     
     def set(self, i, j, v: WorldObj): 

@@ -22,6 +22,7 @@ class R_MAPPO():
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
+        self.args = args
 
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
@@ -31,6 +32,7 @@ class R_MAPPO():
         self.entropy_coef = args.entropy_coef
         self.max_grad_norm = args.max_grad_norm       
         self.huber_delta = args.huber_delta
+        self.use_mgda = args.use_mgda
 
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
@@ -95,9 +97,9 @@ class R_MAPPO():
         # assert imp_weights.shape == adv_targ[..., a].shape, "{} {}".format(imp_weights.shape, adv_targ[..., a].shape)
         # print(adv_targ.shape) # torch.Size([10000, 1]) mappo, torch.Size([10000, 2]) rmappo
 
-
         adv_targ = adv_targ[..., a].unsqueeze(-1)
         assert adv_targ.shape == imp_weights.shape
+        assert imp_weights.shape == adv_targ.shape
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
@@ -188,7 +190,15 @@ class R_MAPPO():
                 if param.grad is not None:
                     policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
 
-        filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 1e-3]
+        # print('='*10)
+        # print(gradnorm)
+        # print('='*10)
+        if not self.use_mgda:
+            filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 5e-2]
+            if len(filter_grad_indx) < len(policy_grads): 
+                print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
+        else :
+            filter_grad_indx = range(n_agents)
         # if len(filter_grad_indx) < len(policy_grads): 
         #     print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
 
@@ -200,6 +210,7 @@ class R_MAPPO():
         # Frank-Wolfe iteration to compute scales.
         sol, _ = MinNormSolver.find_min_norm_element([policy_grads[t] for t in filter_grad_indx])
         # sol = np.ones(10) / len(filter_grad_indx)
+        # print("sol", sol)
         # self.policy.actor_optimizer.zero_grad()
         grads = policy_grads[0]
         j = 0

@@ -182,6 +182,8 @@ def get_config():
     parser.add_argument("--env_name", type=str, default='StarCraft2', help="specify the name of environment")
     parser.add_argument("--use_obs_instead_of_state", action='store_true',
                         default=False, help="Whether to use global state or concatenated obs")
+    parser.add_argument("--seperated_rewards", default=False, action="store_true",
+                        help="whether to use seperate rewards for each agent or averaging rewards from all agents")
 
     # replay buffer parameters
     parser.add_argument("--episode_length", type=int,
@@ -228,6 +230,9 @@ def get_config():
     parser.add_argument("--opti_eps", type=float, default=1e-5,
                         help='RMSprop optimizer epsilon (default: 1e-5)')
     parser.add_argument("--weight_decay", type=float, default=0)
+
+    # mgda parameter
+    parser.add_argument("--use_mgda", action='store_true', default=False, help="use MGDA algorithm or not, default False: using MGDA++")
 
     # trpo parameters
     parser.add_argument("--kl_threshold", type=float, 
