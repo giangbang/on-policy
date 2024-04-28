@@ -1,3 +1,4 @@
+import os
 import copy
 import numpy as np
 import pkg_resources
@@ -19,6 +20,20 @@ SWITCH = 4
 TARGET = 5
 
 OPENED_DOOR = 6
+
+# plt default colors
+COLOR_LIST=(
+    '#1f77b4', 
+    '#ff7f0e',
+    '#2ca02c',
+    '#d62728',
+    '#9467bd',
+    '#8c564b',
+    '#e377c2',
+    '#7f7f7f',
+    '#bcbd22',
+    '#17becf'
+)
 
 class WorldObj:
     repr_dict = {
@@ -81,7 +96,6 @@ class GridworldEnv:
         self.action_pos_dict = {NOOP: np.array([0, 0]), UP: np.array([-1, 0]), 
                                 DOWN: np.array([1, 0]), LEFT: np.array([0, -1]), 
                                 RIGHT: np.array([0, 1])}
-        self.img_shape = [800, 800, 3]  # visualize state
 
         # initialize system state
         self.grid_map_path = pkg_resources.resource_filename(__name__, 'plan{}.json'.format(plan))
@@ -168,7 +182,7 @@ class GridworldEnv:
                     if (i != 0 or j != 0) and self.agent_grid[new_i][new_j]:
                         obs[indx] = AGENT
                 else:
-                    # pad outside cells with walls
+                    # pad out-of-map cells with walls
                     obs[indx] = WALL 
                 indx += 1
         # normalize
@@ -259,7 +273,7 @@ class GridworldEnv:
                 if not (agent_target == np.array([current_cell.x, current_cell.y], dtype=int)).all():
                     continue
                 rewards[i] += self.goal_reward
-                # TARAGET disappear after the agent takes it
+                # TARGET disappear after the agent takes it
                 list_of_change_queue.append(
                     (
                         *agent_target,
@@ -274,6 +288,10 @@ class GridworldEnv:
         for change in list_of_change_queue:
             self.current_grid_map[change[0], change[1]] = change[2]
         
+        # we use a seperate grid to store the positions of agents
+        # instead of saving them into `current_grid_map`
+        # because agents can step into other objects, for example
+        # SWITCH, OPENED DOOR, and EMPTY cells
         self.setup_grid_agent()
         obses = []
         for agent in self.current_agent_list:
@@ -284,7 +302,7 @@ class GridworldEnv:
 
         # done = self.current_goal_on_map == 0 or self._cur_step >= self.max_step
         done = self._cur_step >= self.max_step
-        bad_transition = self._cur_step >= self.max_step
+        # bad_transition = self._cur_step >= self.max_step
 
         infos = [{} for _ in range(self.n_agents)]
         # for i in range(self.n_agents):
@@ -381,9 +399,108 @@ class GridworldEnv:
                             canpassby=True, open_on_hold=door["open_on_hold"]))
         return copy.deepcopy(self.grid_map)
 
-    def _gridmap_to_image(self, render_agent=True, img_shape=None):
-        # Return image from the gridmap
-        pass
+    def _gridmap_to_image(self):
+        cell_size = 50
+        sz = (cell_size, cell_size)
+        cell_img_size = np.array([cell_size, cell_size, 3])
+        pad_img_cell = 2
+
+        white = 255
+        gray = 150
+
+        thres_val = 200
+        
+        img_cells = np.empty(self.grid_map_shape, dtype='O')
+        empty_cell_image = np.ones(cell_img_size, dtype=np.uint8) * white
+        wall_cell_image = np.ones(cell_img_size, dtype=np.uint8) * gray
+
+        apple_cell_image = getattr(self, "cache_apple_img", None)
+        agent_cell_image = getattr(self, "cache_agent_img", None)
+        door_cell_image = getattr(self, "cache_door_img", None)
+        key_cell_image = getattr(self, "cache_key_img", None)
+
+        if apple_cell_image is None:
+            print("loading image assets!...")
+            img_path = pkg_resources.resource_filename(__name__, os.path.join("icons", "apple.png"))
+            apple_cell_image = self._read_image(img_path, sz)
+            self.cache_apple_img = apple_cell_image
+        if agent_cell_image is None:
+            print("loading image assets!...")
+            img_path = pkg_resources.resource_filename(__name__, os.path.join("icons", "agent.png"))
+            agent_cell_image = self._read_image(img_path, sz)
+            self.cache_agent_img = agent_cell_image
+        if door_cell_image is None:
+            print("loading image assets!...")
+            img_path = pkg_resources.resource_filename(__name__, os.path.join("icons", "door.png"))
+            door_cell_image = self._read_image(img_path, sz)
+            self.cache_door_img = door_cell_image
+        if key_cell_image is None:
+            print("loading image assets!...")
+            img_path = pkg_resources.resource_filename(__name__, os.path.join("icons", "key.png"))
+            key_cell_image = self._read_image(img_path, sz)
+            self.cache_key_img = key_cell_image
+                
+        for i in range(self.grid_map.shape[0]):
+            for j in range(self.grid_map.shape[1]):
+                current_cell = self.get(i, j)
+                if current_cell.type == WALL:
+                    img_cells[i, j] = wall_cell_image
+                elif current_cell.type == EMPTY:
+                    img_cells[i, j] = empty_cell_image
+                elif current_cell.type == SWITCH:
+                    color = self._choose_random_color()
+                    switch_img = key_cell_image.copy()
+                    mask = switch_img < thres_val
+                    switch_img[mask] = np.tile(color, np.sum(mask)//3)
+                    img_cells[i, j] = switch_img
+
+                    door_img = door_cell_image.copy()
+                    mask = door_img < thres_val
+                    door_img[mask] = np.tile(color, np.sum(mask)//3)
+                    img_cells[current_cell.target[0], current_cell.target[1]] = door_img
+
+                
+        for agent in self.current_agent_list:
+            agent_color = self._choose_random_color()
+            agent_img = agent_cell_image.copy()
+            mask = agent_img < thres_val
+            agent_img[mask] = np.tile(agent_color, np.sum(mask)//3)
+            img_cells[agent.x, agent.y] = agent_img
+
+            if agent.target is not None and agent.target.size > 1:
+                goal_img = apple_cell_image.copy()
+                mask = goal_img < thres_val
+                goal_img[mask] = np.tile(agent_color, np.sum(mask)//3)
+                if img_cells[agent.target[0], agent.target[1]] is None:
+                    img_cells[agent.target[0], agent.target[1]] = goal_img
+        
+        h, w = self.grid_map_shape
+        return_image = 128 * np.ones((pad_img_cell + (cell_size + pad_img_cell)*h, 
+                                 pad_img_cell + (cell_size + pad_img_cell)*w, 3), dtype=np.uint8)
+
+        for i in range(self.grid_map.shape[0]):
+            for j in range(self.grid_map.shape[1]):
+                if img_cells[i, j] is not None:
+                    return_image[pad_img_cell + (cell_size + pad_img_cell)*i:
+                                 pad_img_cell + (cell_size + pad_img_cell)*i + cell_size,
+                                 pad_img_cell + (cell_size + pad_img_cell)*j:
+                                 pad_img_cell + (cell_size + pad_img_cell)*j + cell_size] = img_cells[i, j]
+
+        return return_image
+    
+    def _choose_random_color(self):
+        # h = np.random.choice(COLOR_LIST, size=1)[0].lstrip('#')
+        # c = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+        # return np.array(c, dtype=np.uint8)
+        return np.random.choice(range(128, 256), size=3)
+
+    def _read_image(self, path, size=None):
+        import cv2
+        im = cv2.imread(path)
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        if size is not None:
+            im = cv2.resize(im, size)
+        return im
 
     def render(self):
         img = self._gridmap_to_image()
@@ -398,6 +515,7 @@ class GridworldEnv:
             ret.append("".join(str(i) for i in row))
 
         return "\n".join(ret)
+
 
 
 def _read_json_file(filepath):
@@ -458,3 +576,6 @@ if __name__ == "__main__":
     print('='*10)
     print(env.reset())
     print(env)
+
+    import cv2
+    cv2.imwrite("render.png", env.render())
