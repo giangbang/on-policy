@@ -215,9 +215,11 @@ class RWARERunner(Runner):
                     actions_env = np.squeeze(np.eye(envs.action_space[0].n)[actions], 2)
                 else:
                     raise NotImplementedError
+                
+                eval_actions = np.array(eval_actions).transpose(1, 0, 2)
 
                 # Obser reward and next obs
-                obs, rewards, dones, infos = envs.step(actions_env)
+                obs, rewards, dones, infos = envs.step(eval_actions)
                 episode_rewards.append(rewards)
 
                 rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)

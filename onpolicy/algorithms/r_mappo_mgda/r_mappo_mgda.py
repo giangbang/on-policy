@@ -192,7 +192,7 @@ class R_MAPPO_MGDA():
                     policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
 
         # print('='*10)
-        print(gradnorm)
+        # print(gradnorm)
         # print('='*10)
         if not self.use_mgda:
             filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > self.mgda_eps]
@@ -251,7 +251,12 @@ class R_MAPPO_MGDA():
 
         self.policy.critic_optimizer.step()
 
-        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
+        other = {
+            "min_grad_norm": np.min(gradnorm),
+            "max_grad_norm": np.max(gradnorm)
+        }
+
+        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, other
 
     def train(self, buffer, update_actor=True):
         """
@@ -281,6 +286,8 @@ class R_MAPPO_MGDA():
         train_info['actor_grad_norm'] = 0
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
+        train_info['min_grad_norm'] = 0
+        train_info['max_grad_norm'] = 0
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
@@ -292,7 +299,7 @@ class R_MAPPO_MGDA():
 
             for sample in data_generator:
 
-                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
+                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, others \
                     = self.ppo_update(sample, update_actor)
 
                 train_info['value_loss'] += value_loss.item()
@@ -301,6 +308,8 @@ class R_MAPPO_MGDA():
                 train_info['actor_grad_norm'] += actor_grad_norm
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += imp_weights.mean()
+                train_info['min_grad_norm'] += others['min_grad_norm']
+                train_info["max_grad_norm"] += others['max_grad_norm']
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 

@@ -460,8 +460,8 @@ class GridworldEnv:
                     img_cells[current_cell.target[0], current_cell.target[1]] = door_img
 
                 
-        for agent in self.current_agent_list:
-            agent_color = self._choose_random_color()
+        for ag_id, agent in enumerate(self.current_agent_list):
+            agent_color = self.convert_color(COLOR_LIST[ag_id].lstrip('#'))
             agent_img = agent_cell_image.copy()
             mask = agent_img < thres_val
             agent_img[mask] = np.tile(agent_color, np.sum(mask)//3)
@@ -493,6 +493,10 @@ class GridworldEnv:
         # c = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
         # return np.array(c, dtype=np.uint8)
         return np.random.choice(range(128, 256), size=3)
+    
+    def convert_color(self, hex):
+        c = tuple(int(hex[i:i+2], 16) for i in (0, 2, 4))
+        return c
 
     def _read_image(self, path, size=None):
         import cv2
@@ -515,6 +519,9 @@ class GridworldEnv:
             ret.append("".join(str(i) for i in row))
 
         return "\n".join(ret)
+    
+    def close(self):
+        pass
 
 
 
@@ -530,7 +537,8 @@ def _read_json_file(filepath):
 
 
 if __name__ == "__main__":
-    env = GridworldEnv(1)
+    plan=4
+    env = GridworldEnv(plan)
     print(env)
     print(env.grid_map)
     for i in env.current_agent_list:
@@ -538,44 +546,44 @@ if __name__ == "__main__":
 
     print(env.reset())
 
-
-    actions = [
-        [RIGHT, DOWN],
-        [RIGHT, RIGHT],
-        [NOOP, RIGHT],
-        [NOOP, RIGHT],
-        [NOOP, UP],
-        [NOOP, UP],
-        [RIGHT, NOOP],
-        [RIGHT, DOWN],
-        [RIGHT, DOWN],
-        [DOWN, DOWN],
-        [RIGHT, LEFT],
-        [UP, LEFT],
-        [RIGHT, LEFT],
-        [LEFT, NOOP],
-        [UP, NOOP], 
-        [LEFT, NOOP],
-        [LEFT, NOOP]
-    ]
-    for action in actions:
-        all = env.step(action)
-        print(all)
-        state1, state2 = all[0]
-        state1 = state1[:9].reshape(3, 3)
-        state2 = state2[:9].reshape(3, 3)
-        print("state1")
-        print(state1)
-        print("state2")
-        print( state2)
-        # env.step(action)
+    if plan == 1:
+        actions = [
+            [RIGHT, DOWN],
+            [RIGHT, RIGHT],
+            [NOOP, RIGHT],
+            [NOOP, RIGHT],
+            [NOOP, UP],
+            [NOOP, UP],
+            [RIGHT, NOOP],
+            [RIGHT, DOWN],
+            [RIGHT, DOWN],
+            [DOWN, DOWN],
+            [RIGHT, LEFT],
+            [UP, LEFT],
+            [RIGHT, LEFT],
+            [LEFT, NOOP],
+            [UP, NOOP], 
+            [LEFT, NOOP],
+            [LEFT, NOOP]
+        ]
+        for action in actions:
+            all = env.step(action)
+            print(all)
+            state1, state2 = all[0]
+            state1 = state1[:9].reshape(3, 3)
+            state2 = state2[:9].reshape(3, 3)
+            print("state1")
+            print(state1)
+            print("state2")
+            print( state2)
+            # env.step(action)
+            print('='*10)
+            print(env)
+            print('='*10)
+        
         print('='*10)
+        print(env.reset())
         print(env)
-        print('='*10)
-    
-    print('='*10)
-    print(env.reset())
-    print(env)
 
     import cv2
-    cv2.imwrite("render.png", env.render())
+    cv2.imwrite(f"render_plan{plan}.png", env.render())

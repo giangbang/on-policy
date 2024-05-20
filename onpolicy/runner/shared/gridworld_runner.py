@@ -62,8 +62,8 @@ class GridworldRunner(Runner):
 
 
                 for agent_id in range(self.num_agents):
-                    train_infos[agent_id].update({"average_episode_rewards": np.mean(self.buffer[agent_id].rewards[..., agent_id]) * self.episode_length})
-                    print("average episode rewards of agent{} is {}".format(agent_id, train_infos[agent_id]["average_episode_rewards"]))
+                    train_infos.update({f"agent{agent_id}/average_episode_rewards": np.mean(self.buffer.rewards[..., agent_id]) * self.episode_length})
+                    print("average episode rewards of agent{} is {}".format(agent_id, train_infos[f"agent{agent_id}/average_episode_rewards"]))
                     
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
                 print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))

@@ -851,8 +851,8 @@ class Warehouse(gym.Env):
 
         new_obs = tuple([self._make_obs(agent) for agent in self.agents])
         info = {}
-        rewards = np.mean(rewards)
-        rewards = [rewards for _ in range(self.n_agents)]
+        # rewards = np.mean(rewards)
+        # rewards = [rewards for _ in range(self.n_agents)]
         return new_obs, list(rewards), dones, info
 
     def render(self, mode="human"):

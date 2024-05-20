@@ -1,6 +1,6 @@
 {
     "map_size": [
-        3,
+        4,
         8
     ],
     "walls": [
@@ -26,15 +26,15 @@
         ],
         [
             1,
-            5
-        ],
-        [
-            1,
             6
         ],
         [
             1,
             7
+        ],
+        [
+            2,
+            4
         ]
     ],
     "agents": [
@@ -45,21 +45,42 @@
             ],
             "target": [
                 0,
-                4
+                7
             ]
         },
         {
             "start_xy": [
-                2,
+                3,
                 0
             ],
             "target": [
-                2, 
+                3, 
                 7
             ]
         }
     ],
     "doors": [
-               
+        {
+            "position": [
+                0, 
+                4
+            ],
+            "switch": [
+                2,
+                3
+            ],
+            "open_on_hold": true
+        },
+        {
+            "position": [
+                3, 
+                4
+            ],
+            "switch": [
+                2,
+                6
+            ],
+            "open_on_hold": true
+        }
     ]
 }

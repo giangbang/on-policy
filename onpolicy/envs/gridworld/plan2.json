@@ -28,14 +28,28 @@
                 0
             ],
             "target": [
-                1,
-                5
+                0,
+                7
             ]
         },
         {
             "start_xy": [
                 1,
                 4
+            ],
+            "target": null
+        },
+        {
+            "start_xy": [
+                0, 
+                5
+            ],
+            "target": null
+        }, 
+        {
+            "start_xy": [
+                2,
+                6
             ],
             "target": null
         }
