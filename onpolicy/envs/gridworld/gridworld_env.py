@@ -586,4 +586,4 @@ if __name__ == "__main__":
         print(env)
 
     import cv2
-    cv2.imwrite(f"render_plan{plan}.png", env.render())
+    cv2.imwrite(f"render_plan{plan}.png", cv2.cvtColor(env.render(), cv2.COLOR_RGB2BGR))
