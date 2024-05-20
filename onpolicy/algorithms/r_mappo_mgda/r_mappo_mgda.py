@@ -1,16 +1,17 @@
 import numpy as np
+from torch.autograd import Variable
 import torch
 import torch.nn as nn
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
-from onpolicy.algorithms.utils.popart_hatrpo import PopArt
-from onpolicy.algorithms.utils.util import check
 from onpolicy.utils.valuenorm import ValueNorm
+from onpolicy.algorithms.utils.util import check
+from onpolicy.utils.min_norm_solvers import MinNormSolver, gradient_normalizers
 
-class HAPPO():
+class R_MAPPO_MGDA():
     """
-    Trainer class for HAPPO to update policies.
+    Trainer class for MAPPO to update policies.
     :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information.
-    :param policy: (HAPPO_Policy) policy to update.
+    :param policy: (R_MAPPO_Policy) policy to update.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
     def __init__(self,
@@ -21,6 +22,7 @@ class HAPPO():
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
+        self.args = args
 
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
@@ -30,6 +32,7 @@ class HAPPO():
         self.entropy_coef = args.entropy_coef
         self.max_grad_norm = args.max_grad_norm       
         self.huber_delta = args.huber_delta
+        self.use_mgda = args.use_mgda
 
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
@@ -40,11 +43,13 @@ class HAPPO():
         self._use_valuenorm = args.use_valuenorm
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
-
+        
+        assert (self._use_popart and self._use_valuenorm) == False, ("self._use_popart and self._use_valuenorm can not be set True simultaneously")
+        
         if self._use_popart:
-            self.value_normalizer = PopArt(1, device=self.device)
+            self.value_normalizer = self.policy.critic.v_out
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(1, device = self.device)
+            self.value_normalizer = ValueNorm(self.policy.num_agents).to(self.device)
         else:
             self.value_normalizer = None
 
@@ -58,14 +63,14 @@ class HAPPO():
 
         :return value_loss: (torch.Tensor) value function loss.
         """
-        if self._use_popart or self._use_valuenorm:
-            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
+        assert values.shape == value_preds_batch.shape, f"{values.shape}, {value_preds_batch.shape}"
+        value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
                                                                                         self.clip_param)
+        if self._use_popart or self._use_valuenorm:
+            self.value_normalizer.update(return_batch)
             error_clipped = self.value_normalizer.normalize(return_batch) - value_pred_clipped
             error_original = self.value_normalizer.normalize(return_batch) - values
         else:
-            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
-                                                                                        self.clip_param)
             error_clipped = return_batch - value_pred_clipped
             error_original = return_batch - values
 
@@ -88,6 +93,32 @@ class HAPPO():
 
         return value_loss
 
+    def ppo_loss(self, a, imp_weights, adv_targ, active_masks_batch, dist_entropy):
+        # assert imp_weights.shape == adv_targ[..., a].shape, "{} {}".format(imp_weights.shape, adv_targ[..., a].shape)
+        # print(adv_targ.shape) # torch.Size([10000, 1]) mappo, torch.Size([10000, 2]) rmappo
+
+        adv_targ = adv_targ[..., a].unsqueeze(-1)
+        assert adv_targ.shape == imp_weights.shape
+        assert imp_weights.shape == adv_targ.shape
+        surr1 = imp_weights * adv_targ
+        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+
+        if self._use_policy_active_masks:
+            policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
+                                            dim=-1,
+                                            keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+        else:
+            policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+
+        policy_loss = policy_action_loss - dist_entropy * self.entropy_coef
+        
+        if self._use_max_grad_norm:
+            nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
+
+        return policy_loss
+
+
+
     def ppo_update(self, sample, update_actor=True):
         """
         Update actor and critic networks.
@@ -95,7 +126,7 @@ class HAPPO():
         :update_actor: (bool) whether to update actor network.
 
         :return value_loss: (torch.Tensor) value function loss.
-        :return critic_grad_norm: (torch.Tensor) gradient norm from critic update.
+        :return critic_grad_norm: (torch.Tensor) gradient norm from critic up9date.
         ;return policy_loss: (torch.Tensor) actor(policy) loss value.
         :return dist_entropy: (torch.Tensor) action entropies.
         :return actor_grad_norm: (torch.Tensor) gradient norm from actor update.
@@ -103,21 +134,14 @@ class HAPPO():
         """
         share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
-        adv_targ, available_actions_batch, factor_batch = sample
-
-
+        adv_targ, available_actions_batch, agent_id = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
-
-
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
         return_batch = check(return_batch).to(**self.tpdv)
-
-
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
-        factor_batch = check(factor_batch).to(**self.tpdv)
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch, 
@@ -127,33 +151,92 @@ class HAPPO():
                                                                               masks_batch, 
                                                                               available_actions_batch,
                                                                               active_masks_batch)
+        
+        n_agents = values.shape[-1]
         # actor update
-        imp_weights = torch.prod(torch.exp(action_log_probs - old_action_log_probs_batch),dim=-1,keepdim=True)
+        imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
+        gradnorm = []
+        policy_grads = {}
+        for a in range(n_agents):
 
-        surr1 = imp_weights * adv_targ
-        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+            self.policy.actor_optimizer.zero_grad()
 
-        if self._use_policy_active_masks:
-            policy_action_loss = (-torch.sum(factor_batch * torch.min(surr1, surr2),
-                                             dim=-1,
-                                             keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
-        else:
-            policy_action_loss = -torch.sum(factor_batch * torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+            # surr1 = imp_weights * adv_targ[..., a]
+            # surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
-        policy_loss = policy_action_loss
+            # if self._use_policy_active_masks:
+            #     policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
+            #                                     dim=-1,
+            #                                     keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+            # else:
+            #     policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
 
-        self.policy.actor_optimizer.zero_grad()
+            # policy_loss = policy_action_loss
 
-        if update_actor:
-            (policy_loss - dist_entropy * self.entropy_coef).backward()
+            # self.policy.actor_optimizer.zero_grad()
 
-        if self._use_max_grad_norm:
-            actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
-        else:
-            actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
+            # if update_actor:
+            #     (policy_loss - dist_entropy * self.entropy_coef).backward(retain_graph=True)
 
+            # if self._use_max_grad_norm:
+            #     actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
+            policy_loss = self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
+            policy_loss.backward(retain_graph=True)
+            gradnorm.append(get_gard_norm(self.policy.actor.parameters()))
+
+            policy_grads[a] = []
+
+            for param in self.policy.actor.parameters():
+                if param.grad is not None:
+                    policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
+
+        # print('='*10)
+        # print(gradnorm)
+        # print('='*10)
+        if not self.use_mgda:
+            filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 5e-2]
+            if len(filter_grad_indx) < len(policy_grads): 
+                print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
+        else :
+            filter_grad_indx = range(n_agents)
+        # if len(filter_grad_indx) < len(policy_grads): 
+        #     print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
+
+        # gn = gradient_normalizers(policy_grads, None, 'l2')
+        # for t in filter_grad_indx:
+        #     for gr_i in range(len(policy_grads[t])):
+        #         policy_grads[t][gr_i] = policy_grads[t][gr_i] / gn[t]
+            
+        # Frank-Wolfe iteration to compute scales.
+        sol, _ = MinNormSolver.find_min_norm_element([policy_grads[t] for t in filter_grad_indx])
+        # sol = np.ones(10) / len(filter_grad_indx)
+        # print("sol", sol)
+        # self.policy.actor_optimizer.zero_grad()
+        grads = policy_grads[0]
+        j = 0
+        init = True
+        for i in filter_grad_indx:
+            for g1, g2 in zip(grads, policy_grads[i]):
+                if init:
+                    g1 = sol[j] * g2
+                    init = False
+                else:
+                    g1 += sol[j] * g2
+            j += 1
+        
+        i = 0
+        for param in self.policy.actor.parameters():
+            if param.grad is not None:
+                param.grad = grads[i]
+                i += 1
+        assert i == len(grads)
+        # for a in range(n_agents):
+        #     loss = loss + scale[a]*self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
+        # loss.backward()
+        actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
         self.policy.actor_optimizer.step()
 
+        # critic update
         value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
 
         self.policy.critic_optimizer.zero_grad()
@@ -177,16 +260,17 @@ class HAPPO():
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
-        if self._use_popart:
+        if self._use_popart or self._use_valuenorm:
             advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(buffer.value_preds[:-1])
         else:
             advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
-
         advantages_copy = advantages.copy()
-        advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
+        active_masks = (buffer.active_masks[:-1] == 0.0).repeat(advantages_copy.shape[-1], axis=-1)
+        advantages_copy[active_masks] = np.nan
         mean_advantages = np.nanmean(advantages_copy)
         std_advantages = np.nanstd(advantages_copy)
         advantages = (advantages - mean_advantages) / (std_advantages + 1e-5)
+        
 
         train_info = {}
 
@@ -206,7 +290,9 @@ class HAPPO():
                 data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
 
             for sample in data_generator:
-                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights = self.ppo_update(sample, update_actor=update_actor)
+
+                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
+                    = self.ppo_update(sample, update_actor)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()

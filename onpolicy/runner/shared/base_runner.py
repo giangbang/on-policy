@@ -64,12 +64,16 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            from onpolicy.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
-            from onpolicy.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
+        
+        if self.all_args.algorithm_name == "mappo_mult_head":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import R_MAPPO_MultHead as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == "mappo_mgda":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mgda import R_MAPPO_MGDA as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
         else:
-            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
-            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+            raise Exception("not implemented algorithm.")
+
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
 

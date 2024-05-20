@@ -1,38 +1,33 @@
 import torch
-from onpolicy.algorithms.r_mappo.algorithm.r_actor_critic import R_Actor, R_Critic
+from onpolicy.algorithms.r_mappo_mgda.algorithm.r_actor_critic import R_Actor, R_Critic
 from onpolicy.utils.util import update_linear_schedule
 
-class HATRPO_Policy:
+
+class R_MAPPOPolicy:
     """
-    HATRPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
+    MAPPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
 
     :param args: (argparse.Namespace) arguments containing relevant model and policy information.
     :param obs_space: (gym.Space) observation space.
-    :param cent_obs_space: (gym.Space) value function input space .
+    :param cent_obs_space: (gym.Space) value function input space (centralized input for MAPPO, decentralized for IPPO).
     :param action_space: (gym.Space) action space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
 
-    def __init__(self, args, obs_space, cent_obs_space, act_space, device=torch.device("cpu")):
-        self.args=args
+    def __init__(self, args, obs_space, cent_obs_space, act_space, num_agents, device=torch.device("cpu")):
         self.device = device
         self.lr = args.lr
         self.critic_lr = args.critic_lr
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
+        self.num_agents = num_agents
 
         self.obs_space = obs_space
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
 
         self.actor = R_Actor(args, self.obs_space, self.act_space, self.device)
-
-        ######################################Please Note#########################################
-        #####   We create one critic for each agent, but they are trained with same data     #####
-        #####   and using same update setting. Therefore they have the same parameter,       #####
-        #####   you can regard them as the same critic.                                      #####
-        ##########################################################################################
-        self.critic = R_Critic(args, self.share_obs_space, self.device)
+        self.critic = R_Critic(args, self.share_obs_space, self.num_agents, self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,
@@ -109,17 +104,15 @@ class HATRPO_Policy:
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
+        action_log_probs, dist_entropy = self.actor.evaluate_actions(obs,
+                                                                     rnn_states_actor,
+                                                                     action,
+                                                                     masks,
+                                                                     available_actions,
+                                                                     active_masks)
 
-        action_log_probs, dist_entropy , action_mu, action_std, all_probs= self.actor.evaluate_actions(obs,
-                                                                    rnn_states_actor,
-                                                                    action,
-                                                                    masks,
-                                                                    available_actions,
-                                                                    active_masks)
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy, action_mu, action_std, all_probs
-
-
+        return values, action_log_probs, dist_entropy
 
     def act(self, obs, rnn_states_actor, masks, available_actions=None, deterministic=False):
         """

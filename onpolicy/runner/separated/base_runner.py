@@ -67,15 +67,14 @@ class Runner(object):
                     os.makedirs(self.save_dir)
 
 
-        if self.all_args.algorithm_name == "happo":
-            from onpolicy.algorithms.happo.happo_trainer import HAPPO as TrainAlgo
-            from onpolicy.algorithms.happo.policy import HAPPO_Policy as Policy
-        elif self.all_args.algorithm_name == "hatrpo":
-            from onpolicy.algorithms.hatrpo.hatrpo_trainer import HATRPO as TrainAlgo
-            from onpolicy.algorithms.hatrpo.policy import HATRPO_Policy as Policy
+        if self.all_args.algorithm_name == "mappo_mult_head":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import R_MAPPO_MultHead as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == "mappo_mgda":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mgda import R_MAPPO_MGDA as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
         else:
-            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
-            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+            raise Exception("not implemented algorithm.")
 
 
         print("share_observation_space: ", self.envs.share_observation_space)
@@ -101,7 +100,10 @@ class Runner(object):
         self.buffer = []
         for agent_id in range(self.num_agents):
             # algorithm
-            tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device)
+            if self.all_args.algorithm_name == "mappo_mult_head":
+                tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device, agent_id=agent_id)
+            else:
+                tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device)
             # buffer
             share_observation_space = self.envs.share_observation_space[agent_id] if self.use_centralized_V else self.envs.observation_space[agent_id]
             bu = SeparatedReplayBuffer(self.all_args,
@@ -147,7 +149,7 @@ class Runner(object):
             agent_order = range(self.num_agents)
         for agent_id in agent_order:
             self.trainer[agent_id].prep_training()
-            if 'ha' in self.all_args.algorithm_name:
+            if 'hatrpo' in self.all_args.algorithm_name or 'happo' in self.all_args.algorithm_name:
                 self.buffer[agent_id].update_factor(factor)
             available_actions = None if self.buffer[agent_id].available_actions is None \
                 else self.buffer[agent_id].available_actions[:-1].reshape(-1, *self.buffer[agent_id].available_actions.shape[2:])

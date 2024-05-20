@@ -5,9 +5,8 @@ import torch.nn as nn
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
-from onpolicy.utils.min_norm_solvers import MinNormSolver, gradient_normalizers
 
-class R_MAPPO():
+class R_MAPPO_MultHead():
     """
     Trainer class for MAPPO to update policies.
     :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -17,12 +16,14 @@ class R_MAPPO():
     def __init__(self,
                  args,
                  policy,
-                 device=torch.device("cpu")):
+                 device=torch.device("cpu"),
+                 agent_id:int=None,):
 
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
         self.args = args
+        self.agent_id = agent_id
 
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
@@ -32,7 +33,6 @@ class R_MAPPO():
         self.entropy_coef = args.entropy_coef
         self.max_grad_norm = args.max_grad_norm       
         self.huber_delta = args.huber_delta
-        self.use_mgda = args.use_mgda
 
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
@@ -97,8 +97,11 @@ class R_MAPPO():
         # assert imp_weights.shape == adv_targ[..., a].shape, "{} {}".format(imp_weights.shape, adv_targ[..., a].shape)
         # print(adv_targ.shape) # torch.Size([10000, 1]) mappo, torch.Size([10000, 2]) rmappo
 
-        adv_targ = adv_targ[..., a].unsqueeze(-1)
-        assert adv_targ.shape == imp_weights.shape
+        if self.agent_id is not None:
+            adv_targ = adv_targ[..., a].unsqueeze(-1)
+        else:
+            adv_targ = adv_targ[a]
+        assert adv_targ.shape == imp_weights.shape, f"{adv_targ.shape} {imp_weights.shape}"
         assert imp_weights.shape == adv_targ.shape
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
@@ -134,7 +137,7 @@ class R_MAPPO():
         """
         share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
-        adv_targ, available_actions_batch = sample
+        adv_targ, available_actions_batch, agent_id = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -155,84 +158,39 @@ class R_MAPPO():
         n_agents = values.shape[-1]
         # actor update
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
-        gradnorm = []
-        policy_grads = {}
-        for a in range(n_agents):
+    
 
-            self.policy.actor_optimizer.zero_grad()
+        self.policy.actor_optimizer.zero_grad()
 
-            # surr1 = imp_weights * adv_targ[..., a]
-            # surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+        # surr1 = imp_weights * adv_targ[..., a]
+        # surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
-            # if self._use_policy_active_masks:
-            #     policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
-            #                                     dim=-1,
-            #                                     keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
-            # else:
-            #     policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+        # if self._use_policy_active_masks:
+        #     policy_action_loss = (-torch.sum(torch.min(surr1, surr2),
+        #                                     dim=-1,
+        #                                     keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+        # else:
+        #     policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
 
-            # policy_loss = policy_action_loss
+        # policy_loss = policy_action_loss
 
-            # self.policy.actor_optimizer.zero_grad()
-
-            # if update_actor:
-            #     (policy_loss - dist_entropy * self.entropy_coef).backward(retain_graph=True)
-
-            # if self._use_max_grad_norm:
-            #     actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
-            policy_loss = self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
-            policy_loss.backward(retain_graph=True)
-            gradnorm.append(get_gard_norm(self.policy.actor.parameters()))
-
-            policy_grads[a] = []
-
-            for param in self.policy.actor.parameters():
-                if param.grad is not None:
-                    policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
-
-        # print('='*10)
-        # print(gradnorm)
-        # print('='*10)
-        if not self.use_mgda:
-            filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 5e-2]
-            if len(filter_grad_indx) < len(policy_grads): 
-                print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
-        else :
-            filter_grad_indx = range(n_agents)
-        # if len(filter_grad_indx) < len(policy_grads): 
-        #     print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
-
-        # gn = gradient_normalizers(policy_grads, None, 'l2')
-        # for t in filter_grad_indx:
-        #     for gr_i in range(len(policy_grads[t])):
-        #         policy_grads[t][gr_i] = policy_grads[t][gr_i] / gn[t]
-            
-        # Frank-Wolfe iteration to compute scales.
-        sol, _ = MinNormSolver.find_min_norm_element([policy_grads[t] for t in filter_grad_indx])
-        # sol = np.ones(10) / len(filter_grad_indx)
-        # print("sol", sol)
         # self.policy.actor_optimizer.zero_grad()
-        grads = policy_grads[0]
-        j = 0
-        init = True
-        for i in filter_grad_indx:
-            for g1, g2 in zip(grads, policy_grads[i]):
-                if init:
-                    g1 = sol[j] * g2
-                    init = False
-                else:
-                    g1 += sol[j] * g2
-            j += 1
-        
-        i = 0
-        for param in self.policy.actor.parameters():
-            if param.grad is not None:
-                param.grad = grads[i]
-                i += 1
-        assert i == len(grads)
-        # for a in range(n_agents):
-        #     loss = loss + scale[a]*self.ppo_loss(a, imp_weights, adv_targ, active_masks_batch, dist_entropy)
-        # loss.backward()
+
+        # if update_actor:
+        #     (policy_loss - dist_entropy * self.entropy_coef).backward(retain_graph=True)
+
+        # if self._use_max_grad_norm:
+        #     actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
+
+        # Only optimize the agent id
+        if self.agent_id is not None:
+            policy_loss = self.ppo_loss(self.agent_id, imp_weights, adv_targ, active_masks_batch, dist_entropy)
+        else:
+            policy_loss = self.ppo_loss(agent_id, imp_weights, adv_targ, active_masks_batch, dist_entropy)
+        policy_loss.backward()
+
+        # self.policy.actor_optimizer.zero_grad()
+
         actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
         self.policy.actor_optimizer.step()
 
