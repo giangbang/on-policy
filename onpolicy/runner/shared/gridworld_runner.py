@@ -80,6 +80,7 @@ class GridworldRunner(Runner):
 
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
+        self.buffer.agent_ids[0] = np.tile(np.arange(self.num_agents), self.n_rollout_threads).reshape(self.buffer.agent_ids[0].shape)
         # self.buffer.available_actions[0] = avail_actions.copy()
 
     @torch.no_grad()
@@ -125,8 +126,10 @@ class GridworldRunner(Runner):
             share_obs = obs
 
         # print("rw", rewards.shape)
+        agent_id = np.tile(np.arange(self.num_agents), self.n_rollout_threads)
         self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic, actions, 
-                           action_log_probs, values, rewards, masks)
+                           action_log_probs, values, rewards, masks, 
+                           agent_id=agent_id.reshape(masks.shape))
 
     @torch.no_grad()
     def eval(self, total_num_steps):

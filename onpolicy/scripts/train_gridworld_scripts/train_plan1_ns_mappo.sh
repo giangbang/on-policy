@@ -1,7 +1,7 @@
 #!/bin/sh
 env="Gridworld"
 plan=1
-algo="mappo_mgda" #"mappo" "ippo"
+algo="mappo" #"mappo" "ippo"
 exp="check"
 seed_max=1
 

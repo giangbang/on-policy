@@ -64,8 +64,8 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        
-        if self.all_args.algorithm_name == "mappo_mult_head":
+        print(self.algorithm_name)
+        if self.all_args.algorithm_name == "mappo":
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import R_MAPPO_MultHead as TrainAlgo
             from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
         elif self.all_args.algorithm_name == "mappo_mgda":

@@ -98,9 +98,13 @@ class R_MAPPO_MultHead():
         # print(adv_targ.shape) # torch.Size([10000, 1]) mappo, torch.Size([10000, 2]) rmappo
 
         if self.agent_id is not None:
+            assert isinstance(a, int)
             adv_targ = adv_targ[..., a].unsqueeze(-1)
         else:
-            adv_targ = adv_targ[a]
+            assert adv_targ.shape[0] == a.shape[0]
+            assert len(adv_targ.shape) == 2 and len(a.shape) == 2
+            a = torch.from_numpy(a).to(self.device)
+            adv_targ = torch.gather(adv_targ, -1, a)
         assert adv_targ.shape == imp_weights.shape, f"{adv_targ.shape} {imp_weights.shape}"
         assert imp_weights.shape == adv_targ.shape
         surr1 = imp_weights * adv_targ
@@ -183,6 +187,7 @@ class R_MAPPO_MultHead():
         #     actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
 
         # Only optimize the agent id
+        
         if self.agent_id is not None:
             policy_loss = self.ppo_loss(self.agent_id, imp_weights, adv_targ, active_masks_batch, dist_entropy)
         else:
