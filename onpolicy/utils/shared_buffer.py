@@ -84,7 +84,9 @@ class SharedReplayBuffer(object):
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
 
-        self.agent_ids = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=int)
+        self.agent_ids = np.arange(self.num_agents).tile((self.episode_length + 1) * self.n_rollout_threads)
+        self.agent_ids = self.agent_ids.reshape(self.masks.shape)
+        assert self.agent_ids.shape == (self.episode_length + 1, self.n_rollout_threads, num_agents, 1)
 
         self.step = 0
 
