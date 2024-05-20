@@ -233,6 +233,8 @@ def get_config():
 
     # mgda parameter
     parser.add_argument("--use_mgda", action='store_true', default=False, help="use MGDA algorithm or not, default False: using MGDA++")
+    parser.add_argument("--mgda_eps", type=float, default=5e-2,
+                        help='epsilon used in MGDA++')
 
     # trpo parameters
     parser.add_argument("--kl_threshold", type=float, 

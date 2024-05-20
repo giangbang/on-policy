@@ -33,6 +33,7 @@ class R_MAPPO_MGDA():
         self.max_grad_norm = args.max_grad_norm       
         self.huber_delta = args.huber_delta
         self.use_mgda = args.use_mgda
+        self.mgda_eps = args.mgda_eps
 
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
@@ -191,10 +192,10 @@ class R_MAPPO_MGDA():
                     policy_grads[a].append(Variable(param.grad.data.clone(), requires_grad=False))
 
         # print('='*10)
-        # print(gradnorm)
+        print(gradnorm)
         # print('='*10)
         if not self.use_mgda:
-            filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > 5e-2]
+            filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > self.mgda_eps]
             if len(filter_grad_indx) < len(policy_grads): 
                 print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
         else :
