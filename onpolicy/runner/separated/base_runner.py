@@ -70,7 +70,7 @@ class Runner(object):
         if self.all_args.algorithm_name == "mappo":
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import R_MAPPO_MultHead as TrainAlgo
             from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
-        elif self.all_args.algorithm_name == "mappo_mgda":
+        elif self.all_args.algorithm_name == "mappo_mgda" or self.all_args.algorithm_name == "mappo_mgdapp":
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mgda import R_MAPPO_MGDA as TrainAlgo
             from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
         else:

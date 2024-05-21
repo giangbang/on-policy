@@ -196,8 +196,8 @@ class R_MAPPO_MGDA():
         # print('='*10)
         if not self.use_mgda:
             filter_grad_indx = [i for i in range(len(policy_grads)) if gradnorm[i] > self.mgda_eps]
-            if len(filter_grad_indx) < len(policy_grads): 
-                print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
+            # if len(filter_grad_indx) < len(policy_grads): 
+                # print(f"Filter: {len(policy_grads) - len(filter_grad_indx)} grad")
         else :
             filter_grad_indx = range(n_agents)
         # if len(filter_grad_indx) < len(policy_grads): 
