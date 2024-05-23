@@ -75,6 +75,8 @@ class GridworldRunner(Runner):
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
                 self.eval(total_num_steps)
+        
+        self.eval(total_num_steps)
 
     def warmup(self):
         # reset env
@@ -153,6 +155,8 @@ class GridworldRunner(Runner):
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
 
+        bad_masks = np.array([[[0.0] for agent_id in range(self.num_agents)] for info in infos])
+
         for agent_id in range(self.num_agents):
             self.buffer[agent_id].insert(share_obs[:, agent_id],
                                         np.array(list(obs[:, agent_id])),
@@ -162,7 +166,9 @@ class GridworldRunner(Runner):
                                         action_log_probs[:, agent_id],
                                         values[:, agent_id],
                                         rewards[:, agent_id],
-                                        masks[:, agent_id])
+                                        masks[:, agent_id],
+                                        bad_masks[:,agent_id]),
+    
 
     @torch.no_grad()
     def eval(self, total_num_steps):

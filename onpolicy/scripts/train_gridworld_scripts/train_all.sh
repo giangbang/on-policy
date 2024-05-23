@@ -2,10 +2,10 @@
 
 # for f in *.sh; do
 #     echo "$f" 
-#     if [ "$f" = "train_all.sh" ]; then
+#     if [ "$f" = "train_all.sh" ] || [![ $f == *"ns"* ]]; then
 #         echo ""
 #     else
-#         bash "$f" 
+#         echo "$f" 
 #     fi;
 # done
 
