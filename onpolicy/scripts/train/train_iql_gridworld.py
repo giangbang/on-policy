@@ -427,7 +427,7 @@ class Args:
     """the target network update rate"""
     target_network_frequency: int = 1000
     """the timesteps it takes to update the target network"""
-    batch_size: int = 128
+    batch_size: int = 64
     """the batch size of sample from the reply memory"""
     start_e: float = 1
     """the starting epsilon for exploration"""
@@ -524,7 +524,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         )
     args = Args
     # assert args.num_envs == 1, "vectorized envs are not supported at the moment"
-    run_name = f"{args.env_id}__{args.exp_name}__plan{args.plan}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}/plan{args.plan}/iql/{all_args.experiment_name}/seed{args.seed}_{int(time.time())}/logs"
     if args.track:
         import wandb
 

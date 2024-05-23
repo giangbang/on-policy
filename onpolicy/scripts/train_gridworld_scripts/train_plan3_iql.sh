@@ -1,6 +1,6 @@
 #!/bin/sh
 env="Gridworld"
-plan=1
+plan=3
 algo="iql" #"mappo" "ippo"
 exp="check"
 seed_max=3
