@@ -13,5 +13,5 @@ do
     --plan ${plan} --seed ${seed} --hidden_size 64 --entropy_coef 0.01 --use_proper_time_limits --share_policy  \
     --n_training_threads 1 --n_rollout_threads 10 --num_mini_batch 1 --episode_length 200 --num_env_steps 510_000 \
     --ppo_epoch 5 --use_ReLU --gain 0.01 --lr 5e-4 --critic_lr 5e-4 --wandb_name "xxx" --user_name "_" --cuda --use_eval --deterministic_eval \
-    --seperated_rewards
+    --seperated_rewards 
 done

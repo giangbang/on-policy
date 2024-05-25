@@ -155,7 +155,7 @@ class GridworldRunner(Runner):
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
 
-        bad_masks = np.array([[[0.0] for agent_id in range(self.num_agents)] for info in infos])
+        bad_masks = np.array([[[1.0] for _ in range(self.num_agents)] for _ in infos])
 
         for agent_id in range(self.num_agents):
             self.buffer[agent_id].insert(share_obs[:, agent_id],
