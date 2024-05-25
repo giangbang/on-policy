@@ -400,6 +400,15 @@ class GridworldEnv:
         return copy.deepcopy(self.grid_map)
 
     def _gridmap_to_image(self):
+        import cv2
+        # for inserting text to images
+        font = cv2.FONT_HERSHEY_SIMPLEX 
+        org = (18, 45) 
+        fontScale = .75
+        text_color = (0, 0, 0) 
+        thickness = 2
+
+
         cell_size = 50
         sz = (cell_size, cell_size)
         cell_img_size = np.array([cell_size, cell_size, 3])
@@ -465,6 +474,10 @@ class GridworldEnv:
             agent_img = agent_cell_image.copy()
             mask = agent_img < thres_val
             agent_img[mask] = np.tile(agent_color, np.sum(mask)//3)
+
+            agent_img = cv2.putText(agent_img, str(ag_id+1), org, font,  
+                   fontScale, text_color, thickness, cv2.LINE_AA) 
+
             img_cells[agent.x, agent.y] = agent_img
 
             if agent.target is not None and agent.target.size > 1:
@@ -537,7 +550,13 @@ def _read_json_file(filepath):
 
 
 if __name__ == "__main__":
-    plan=4
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Gridworld', formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--plan", type=int, default=1, help="Layout map of the scenario")
+    args = parser.parse_known_args()[0]
+
+    plan=args.plan
     env = GridworldEnv(plan)
     print(env)
     print(env.grid_map)
