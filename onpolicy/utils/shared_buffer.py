@@ -61,11 +61,10 @@ class SharedReplayBuffer(object):
         self.rnn_states_critic = np.zeros_like(self.rnn_states)
 
         self.value_preds = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length + 1, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
         self.returns = np.zeros_like(self.value_preds)
         self.advantages = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
-
+            (self.episode_length, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
                                              dtype=np.float32)
@@ -79,16 +78,20 @@ class SharedReplayBuffer(object):
         self.action_log_probs = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
         self.rewards = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, num_agents), dtype=np.float32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
 
+        self.agent_ids = np.tile(np.arange(self.num_agents), (self.episode_length + 1) * self.n_rollout_threads)
+        self.agent_ids = self.agent_ids.reshape(self.masks.shape)
+        assert self.agent_ids.shape == (self.episode_length + 1, self.n_rollout_threads, num_agents, 1)
+
         self.step = 0
 
     def insert(self, share_obs, obs, rnn_states_actor, rnn_states_critic, actions, action_log_probs,
-               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None, agent_id=None):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -111,7 +114,10 @@ class SharedReplayBuffer(object):
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = rewards.copy()
+        # shape: n_thread x n_agent x n_agent
+        self.rewards[self.step] = np.tile(rewards.squeeze(-1), self.rewards.shape[-1]).reshape(*self.rewards.shape[1:])
+        # self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
+        # print("rewards", rewards, "tile reward", self.rewards[self.step])
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
@@ -119,6 +125,8 @@ class SharedReplayBuffer(object):
             self.active_masks[self.step + 1] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
+        if agent_id is not None:
+            self.agent_ids[self.step + 1] = agent_id.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
@@ -146,7 +154,7 @@ class SharedReplayBuffer(object):
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = rewards.copy()
+        self.rewards[self.step] = np.tile(rewards.copy(), self.rewards.shape[-1])
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
@@ -166,6 +174,7 @@ class SharedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
         self.active_masks[0] = self.active_masks[-1].copy()
+        self.agent_ids[0] = self.agent_ids[-1].copy()
         if self.available_actions is not None:
             self.available_actions[0] = self.available_actions[-1].copy()
 
@@ -367,12 +376,14 @@ class SharedReplayBuffer(object):
         actions = self.actions.reshape(-1, self.actions.shape[-1])
         if self.available_actions is not None:
             available_actions = self.available_actions[:-1].reshape(-1, self.available_actions.shape[-1])
-        value_preds = self.value_preds[:-1].reshape(-1, 1)
-        returns = self.returns[:-1].reshape(-1, 1)
+        value_preds = self.value_preds[:-1].reshape(-1, self.value_preds.shape[-1])
+        returns = self.returns[:-1].reshape(-1, self.returns.shape[-1])
         masks = self.masks[:-1].reshape(-1, 1)
         active_masks = self.active_masks[:-1].reshape(-1, 1)
         action_log_probs = self.action_log_probs.reshape(-1, self.action_log_probs.shape[-1])
-        advantages = advantages.reshape(-1, 1)
+        advantages = advantages.reshape(-1, advantages.shape[-1])
+
+        agent_ids = self.agent_ids[:-1].reshape(-1, self.agent_ids.shape[-1])
 
         for indices in sampler:
             # obs size [T+1 N M Dim]-->[T N M Dim]-->[T*N*M,Dim]-->[index,Dim]
@@ -390,6 +401,7 @@ class SharedReplayBuffer(object):
             masks_batch = masks[indices]
             active_masks_batch = active_masks[indices]
             old_action_log_probs_batch = action_log_probs[indices]
+            agent_ids = agent_ids[indices]
             if advantages is None:
                 adv_targ = None
             else:
@@ -397,7 +409,7 @@ class SharedReplayBuffer(object):
 
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
-                  adv_targ, available_actions_batch
+                  adv_targ, available_actions_batch, agent_ids
 
     def naive_recurrent_generator(self, advantages, num_mini_batch):
         """
@@ -606,3 +618,4 @@ class SharedReplayBuffer(object):
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
                   adv_targ, available_actions_batch
+

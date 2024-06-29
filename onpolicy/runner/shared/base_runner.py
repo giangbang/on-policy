@@ -16,6 +16,7 @@ class Runner(object):
     def __init__(self, config):
 
         self.all_args = config['all_args']
+        print(config)
         self.envs = config['envs']
         self.eval_envs = config['eval_envs']
         self.device = config['device']
@@ -49,7 +50,8 @@ class Runner(object):
         # dir
         self.model_dir = self.all_args.model_dir
 
-        if self.use_wandb:
+        if self.use_wandb and False:
+            import wandb
             self.save_dir = str(wandb.run.dir)
             self.run_dir = str(wandb.run.dir)
         else:
@@ -62,12 +64,16 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
-            from onpolicy.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
-            from onpolicy.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
+        print(self.algorithm_name)
+        if self.all_args.algorithm_name == "mappo":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import R_MAPPO_MultHead as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == "mappo_mgda":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mgda import R_MAPPO_MGDA as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
         else:
-            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
-            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+            raise Exception("not implemented algorithm.")
+
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
 
@@ -79,7 +85,8 @@ class Runner(object):
         if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
             self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], self.num_agents, device = self.device)
         else:
-            self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], device = self.device)
+            self.policy = Policy(self.all_args, self.envs.observation_space[0], share_observation_space, self.envs.action_space[0], self.num_agents, device = self.device)
+
 
         if self.model_dir is not None:
             self.restore(self.model_dir)
@@ -130,6 +137,8 @@ class Runner(object):
                                                         np.concatenate(self.buffer.rnn_states_critic[-1]),
                                                         np.concatenate(self.buffer.masks[-1]))
         next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
+        # [self.n_rollout_threads , -1 , ...]
+        
         self.buffer.compute_returns(next_values, self.trainer.value_normalizer)
     
     def train(self):
@@ -170,7 +179,7 @@ class Runner(object):
             if self.use_wandb:
                 wandb.log({k: v}, step=total_num_steps)
             else:
-                self.writter.add_scalars(k, {k: v}, total_num_steps)
+                self.writter.add_scalar(k, v, total_num_steps)
 
     def log_env(self, env_infos, total_num_steps):
         """
@@ -183,4 +192,4 @@ class Runner(object):
                 if self.use_wandb:
                     wandb.log({k: np.mean(v)}, step=total_num_steps)
                 else:
-                    self.writter.add_scalars(k, {k: np.mean(v)}, total_num_steps)
+                    self.writter.add_scalar(k, np.mean(v), total_num_steps)

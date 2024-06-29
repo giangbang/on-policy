@@ -7,13 +7,13 @@ import imageio
 def _t2n(x):
     return x.detach().cpu().numpy()
 
-class MPERunner(Runner):
+class MatrixGameRunner(Runner):
     """Runner class to perform training, evaluation. and data collection for the MPEs. See parent class for details."""
     def __init__(self, config):
-        super(MPERunner, self).__init__(config)
+        super(MatrixGameRunner, self).__init__(config)
 
     def run(self):
-        self.warmup()
+        self.warmup()   
 
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
@@ -25,10 +25,11 @@ class MPERunner(Runner):
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
-                
+                print("action here", actions_env.shape, actions, type(self.envs.action_space), self.envs.action_space[0].n)
                     
                 # Obser reward and next obs
                 obs, rewards, dones, infos = self.envs.step(actions_env)
+                rewards = np.array(rewards)[..., None]
 
                 data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic
 
@@ -59,7 +60,7 @@ class MPERunner(Runner):
                                 self.num_env_steps,
                                 int(total_num_steps / (end - start))))
 
-                if self.env_name == "MPE":
+                if self.env_name == "matrix":
                     env_infos = {}
                     for agent_id in range(self.num_agents):
                         idv_rews = []
@@ -116,7 +117,7 @@ class MPERunner(Runner):
                 else:
                     actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
         elif self.envs.action_space[0].__class__.__name__ == 'Discrete':
-            actions_env = np.squeeze(np.eye(self.envs.action_space[0].n)[actions], 2)
+            actions_env = actions.squeeze(-1)
         else:
             raise NotImplementedError
 
@@ -151,7 +152,7 @@ class MPERunner(Runner):
             eval_action, eval_rnn_states = self.trainer.policy.act(np.concatenate(eval_obs),
                                                 np.concatenate(eval_rnn_states),
                                                 np.concatenate(eval_masks),
-                                                deterministic=self.all_args.deterministic_eval)
+                                                deterministic=True)
             eval_actions = np.array(np.split(_t2n(eval_action), self.n_eval_rollout_threads))
             eval_rnn_states = np.array(np.split(_t2n(eval_rnn_states), self.n_eval_rollout_threads))
             

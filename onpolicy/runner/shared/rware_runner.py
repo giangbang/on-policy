@@ -7,13 +7,13 @@ import imageio
 def _t2n(x):
     return x.detach().cpu().numpy()
 
-class MPERunner(Runner):
+class RWARERunner(Runner):
     """Runner class to perform training, evaluation. and data collection for the MPEs. See parent class for details."""
     def __init__(self, config):
-        super(MPERunner, self).__init__(config)
+        super(RWARERunner, self).__init__(config)
 
     def run(self):
-        self.warmup()
+        self.warmup()   
 
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
@@ -25,10 +25,10 @@ class MPERunner(Runner):
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
-                
-                    
+
                 # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
+                obs, rewards, dones, infos = self.envs.step(actions)
+                rewards = rewards.reshape(*rewards.shape, 1)
 
                 data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic
 
@@ -50,7 +50,7 @@ class MPERunner(Runner):
             if episode % self.log_interval == 0:
                 end = time.time()
                 print("\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
-                        .format(self.all_args.scenario_name,
+                        .format(self.all_args.scenario,
                                 self.algorithm_name,
                                 self.experiment_name,
                                 episode,
@@ -59,20 +59,11 @@ class MPERunner(Runner):
                                 self.num_env_steps,
                                 int(total_num_steps / (end - start))))
 
-                if self.env_name == "MPE":
-                    env_infos = {}
-                    for agent_id in range(self.num_agents):
-                        idv_rews = []
-                        for info in infos:
-                            if 'individual_reward' in info[agent_id].keys():
-                                idv_rews.append(info[agent_id]['individual_reward'])
-                        agent_k = 'agent%i/individual_rewards' % agent_id
-                        env_infos[agent_k] = idv_rews
+            
 
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
                 print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
                 self.log_train(train_infos, total_num_steps)
-                self.log_env(env_infos, total_num_steps)
 
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
@@ -136,6 +127,7 @@ class MPERunner(Runner):
         else:
             share_obs = obs
 
+        # print("rw", rewards.shape)
         self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs, values, rewards, masks)
 
     @torch.no_grad()
@@ -168,7 +160,7 @@ class MPERunner(Runner):
                 raise NotImplementedError
 
             # Obser reward and next obs
-            eval_obs, eval_rewards, eval_dones, eval_infos = self.eval_envs.step(eval_actions_env)
+            eval_obs, eval_rewards, eval_dones, eval_infos = self.eval_envs.step(eval_actions)
             eval_episode_rewards.append(eval_rewards)
 
             eval_rnn_states[eval_dones == True] = np.zeros(((eval_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)

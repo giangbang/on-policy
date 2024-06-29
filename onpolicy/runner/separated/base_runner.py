@@ -54,6 +54,7 @@ class Runner(object):
                 os.makedirs(self.gif_dir)
         else:
             if self.use_wandb:
+                import wandb
                 self.save_dir = str(wandb.run.dir)
             else:
                 self.run_dir = config["run_dir"]
@@ -65,16 +66,15 @@ class Runner(object):
                 if not os.path.exists(self.save_dir):
                     os.makedirs(self.save_dir)
 
-
-        if self.all_args.algorithm_name == "happo":
-            from onpolicy.algorithms.happo.happo_trainer import HAPPO as TrainAlgo
-            from onpolicy.algorithms.happo.policy import HAPPO_Policy as Policy
-        elif self.all_args.algorithm_name == "hatrpo":
-            from onpolicy.algorithms.hatrpo.hatrpo_trainer import HATRPO as TrainAlgo
-            from onpolicy.algorithms.hatrpo.policy import HATRPO_Policy as Policy
+        print(self.algorithm_name)
+        if self.all_args.algorithm_name == "mappo":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import R_MAPPO_MultHead as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == "mappo_mgda" or self.all_args.algorithm_name == "mappo_mgdapp":
+            from onpolicy.algorithms.r_mappo_mgda.r_mappo_mgda import R_MAPPO_MGDA as TrainAlgo
+            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
         else:
-            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
-            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+            raise Exception("not implemented algorithm.")
 
 
         print("share_observation_space: ", self.envs.share_observation_space)
@@ -89,6 +89,7 @@ class Runner(object):
                         self.envs.observation_space[agent_id],
                         share_observation_space,
                         self.envs.action_space[agent_id],
+                        self.num_agents,
                         device = self.device)
             self.policy.append(po)
 
@@ -99,13 +100,17 @@ class Runner(object):
         self.buffer = []
         for agent_id in range(self.num_agents):
             # algorithm
-            tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device)
+            if self.all_args.algorithm_name == "mappo":
+                tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device, agent_id=agent_id)
+            else:
+                tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device)
             # buffer
             share_observation_space = self.envs.share_observation_space[agent_id] if self.use_centralized_V else self.envs.observation_space[agent_id]
             bu = SeparatedReplayBuffer(self.all_args,
                                        self.envs.observation_space[agent_id],
                                        share_observation_space,
-                                       self.envs.action_space[agent_id])
+                                       self.envs.action_space[agent_id],
+                                       self.num_agents)
             self.buffer.append(bu)
             self.trainer.append(tr)
             
@@ -138,9 +143,14 @@ class Runner(object):
         action_dim=self.buffer[0].actions.shape[-1]
         factor = np.ones((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
 
-        for agent_id in torch.randperm(self.num_agents):
+        if "ha" in self.all_args.algorithm_name:
+            agent_order = torch.randperm(self.num_agents)
+        else:
+            agent_order = range(self.num_agents)
+        for agent_id in agent_order:
             self.trainer[agent_id].prep_training()
-            self.buffer[agent_id].update_factor(factor)
+            if 'hatrpo' in self.all_args.algorithm_name or 'happo' in self.all_args.algorithm_name:
+                self.buffer[agent_id].update_factor(factor)
             available_actions = None if self.buffer[agent_id].available_actions is None \
                 else self.buffer[agent_id].available_actions[:-1].reshape(-1, *self.buffer[agent_id].available_actions.shape[2:])
             
@@ -206,14 +216,16 @@ class Runner(object):
             for k, v in train_infos[agent_id].items():
                 agent_k = "agent%i/" % agent_id + k
                 if self.use_wandb:
+                    import wandb
                     wandb.log({agent_k: v}, step=total_num_steps)
                 else:
-                    self.writter.add_scalars(agent_k, {agent_k: v}, total_num_steps)
+                    self.writter.add_scalar(agent_k, v, total_num_steps)
 
     def log_env(self, env_infos, total_num_steps):
         for k, v in env_infos.items():
             if len(v) > 0:
                 if self.use_wandb:
+                    import wandb
                     wandb.log({k: np.mean(v)}, step=total_num_steps)
                 else:
-                    self.writter.add_scalars(k, {k: np.mean(v)}, total_num_steps)
+                    self.writter.add_scalar(k, np.mean(v), total_num_steps)
