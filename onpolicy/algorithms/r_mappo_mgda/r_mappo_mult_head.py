@@ -49,7 +49,7 @@ class R_MAPPO_MultHead():
         if self._use_popart:
             self.value_normalizer = self.policy.critic.v_out
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(self.policy.num_agents).to(self.device)
+            self.value_normalizer = ValueNorm(self.policy.num_agents, device=device).to(self.device)
         else:
             self.value_normalizer = None
 
@@ -57,7 +57,7 @@ class R_MAPPO_MultHead():
         """
         Calculate value function loss.
         :param values: (torch.Tensor) value function predictions.
-        :param value_preds_batch: (torch.Tensor) "old" value  predictions from data batch (used for value clip loss)
+        :param value_preds_batch: (torch.Tensor) "old" value predictions from data batch (used for value clip loss)
         :param return_batch: (torch.Tensor) reward to go returns.
         :param active_masks_batch: (torch.Tensor) denotes if agent is active or dead at a given timesep.
 
@@ -158,11 +158,11 @@ class R_MAPPO_MultHead():
                                                                               masks_batch, 
                                                                               available_actions_batch,
                                                                               active_masks_batch)
-        
+
         n_agents = values.shape[-1]
         # actor update
+        assert action_log_probs.shape == old_action_log_probs_batch.shape
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
-    
 
         self.policy.actor_optimizer.zero_grad()
 
