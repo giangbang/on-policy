@@ -50,7 +50,7 @@ class R_MAPPO_MGDA():
         if self._use_popart:
             self.value_normalizer = self.policy.critic.v_out
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(self.policy.num_agents).to(self.device)
+            self.value_normalizer = ValueNorm(self.policy.num_agents, device=self.device).to(self.device)
         else:
             self.value_normalizer = None
 
