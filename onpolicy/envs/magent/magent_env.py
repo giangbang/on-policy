@@ -1,4 +1,17 @@
-from gym import spaces
+import numpy as np
+from gymnasium import spaces
+import magent2.environments
+from magent2.environments.magent_env import magent_parallel_env as Env
+
+
+def transpose_space(space):
+    shape = space.shape
+    assert len(shape) == 3, shape
+    shape = (shape[2], shape[0], shape[1])
+    low = space.low.reshape(shape)
+    high = space.high.reshape(shape)
+    transposed = spaces.Box(low=low, high=high, shape=shape, dtype=np.float32)
+    return transposed
 
 
 class MAgentEnv:
@@ -6,24 +19,45 @@ class MAgentEnv:
         import importlib
 
         importlib.import_module(f"magent2.environments.{env_id}")
-        self.env = eval(f"magent2.environments.{env_id}").env(
-            seed=seed, map_size=map_size, **kwargs
-        )
+        self.env: Env = eval(f"magent2.environments.{env_id}").env(seed=seed, **kwargs)
+        # change this to debug
+        self.env.set_random_enemy(False)
         self.n_agents = self.env.n_agents
-        self.observation_space = self.env.agent_action_space
-        self.action_space = self.env.agent_action_space
-        self.share_observation_space = spaces.Tuple(
-            [self.env.state_space for _ in range(self.n_agents)]
+
+        self.observation_space = spaces.Tuple(
+            [
+                transpose_space(self.env.agent_observation_space)
+                for _ in range(self.n_agents)
+            ]
         )
+        self.action_space = spaces.Tuple(
+            [self.env.agent_action_space for _ in range(self.n_agents)]
+        )
+        self.share_observation_space = spaces.Tuple(
+            [transpose_space(self.env.state_space) for _ in range(self.n_agents)]
+        )
+
+    def seed(self, seed=None):
+        self.env.seed(seed=seed)
 
     def reset(self):
         obses, _ = self.env.gym_reset()
         state = self.env.state()
+        assert len(state.shape) == 3
+        state = np.transpose(state, [2, 0, 1])
+        obses = np.transpose(obses, [0, 3, 1, 2])
         return obses, [state] * self.n_agents, None
 
     def step(self, actions):
+        actions = actions.astype(np.int32)
         next_obses, rewards, dones, info = self.env.gym_step(actions)
+        next_obses = np.transpose(next_obses, [0, 3, 1, 2])
         state = self.env.state()
+        assert len(state.shape) == 3
+        state = np.transpose(state, [2, 0, 1])
+
+        if len(dones.shape) == 2:
+            dones = dones.squeeze(-1)
 
         return (
             next_obses,

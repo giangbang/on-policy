@@ -1,7 +1,9 @@
 import torch.nn as nn
 from .util import init
+import torch
 
 """CNN Modules and utils."""
+
 
 class Flatten(nn.Module):
     def forward(self, x):
@@ -9,12 +11,14 @@ class Flatten(nn.Module):
 
 
 class CNNLayer(nn.Module):
-    def __init__(self, obs_shape, hidden_size, use_orthogonal, use_ReLU, kernel_size=3, stride=1):
+    def __init__(
+        self, obs_shape, hidden_size, use_orthogonal, use_ReLU, kernel_size=3, stride=1
+    ):
         super(CNNLayer, self).__init__()
 
         active_func = [nn.Tanh(), nn.ReLU()][use_ReLU]
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][use_orthogonal]
-        gain = nn.init.calculate_gain(['tanh', 'relu'][use_ReLU])
+        gain = nn.init.calculate_gain(["tanh", "relu"][use_ReLU])
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
@@ -24,23 +28,32 @@ class CNNLayer(nn.Module):
         input_height = obs_shape[2]
 
         self.cnn = nn.Sequential(
-            init_(nn.Conv2d(in_channels=input_channel,
-                            out_channels=hidden_size // 2,
-                            kernel_size=kernel_size,
-                            stride=stride)
-                  ),
+            nn.Conv2d(input_channel, input_channel, 3),
             active_func,
-            Flatten(),
-            init_(nn.Linear(hidden_size // 2 * (input_width - kernel_size + stride) * (input_height - kernel_size + stride),
-                            hidden_size)
-                  ),
+            nn.Conv2d(input_channel, input_channel, 3),
             active_func,
-            init_(nn.Linear(hidden_size, hidden_size)), active_func)
+        )
+
+        dummy_input = torch.randn(obs_shape)
+        dummy_output = self.cnn(dummy_input)
+        flatten_dim = dummy_output.view(-1).shape[0]
+        self.network = nn.Sequential(
+            nn.Linear(flatten_dim, 120),
+            active_func,
+            nn.Linear(120, 84),
+            active_func,
+            nn.Linear(84, hidden_size),
+        )
 
     def forward(self, x):
-        x = x / 255.0
+        assert len(x.shape) >= 3, "only support magent input observation"
         x = self.cnn(x)
-        return x
+        if len(x.shape) == 3:
+            batchsize = 1
+        else:
+            batchsize = x.shape[0]
+        x = x.reshape(batchsize, -1)
+        return self.network(x)
 
 
 class CNNBase(nn.Module):
@@ -51,7 +64,9 @@ class CNNBase(nn.Module):
         self._use_ReLU = args.use_ReLU
         self.hidden_size = args.hidden_size
 
-        self.cnn = CNNLayer(obs_shape, self.hidden_size, self._use_orthogonal, self._use_ReLU)
+        self.cnn = CNNLayer(
+            obs_shape, self.hidden_size, self._use_orthogonal, self._use_ReLU
+        )
 
     def forward(self, x):
         x = self.cnn(x)

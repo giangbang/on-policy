@@ -23,7 +23,7 @@ dependencies = [
     "numpy<2.0.0",
     "tensorboardX",
     "setproctitle",
-    "git+https://github.com/giangbang/magent2"
+    "magent2@git+https://github.com/giangbang/magent2"
 ]
 requires-python = ">=3.0"
 
