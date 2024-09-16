@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "onpolicy"
+version = "0.1.0"
+description = "MAPPO"
+readme = "README.md"
+authors = [{ name = "giangbang", email = "banggiangle2015@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = [ "MARL", "pytorch"]
+dependencies = [
+    "numpy<2.0.0",
+    "tensorboardX",
+    "setproctitle",
+    "git+https://github.com/giangbang/magent2"
+]
+requires-python = ">=3.0"
+
+[tool.setuptools]
+packages = ["onpolicy"]
+
+[project.urls]
+Homepage = "https://github.com/giangbang/on-policy"
+
