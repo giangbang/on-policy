@@ -27,21 +27,31 @@ class CNNLayer(nn.Module):
         input_width = obs_shape[1]
         input_height = obs_shape[2]
 
-        self.cnn = nn.Sequential(
-            nn.Conv2d(input_channel, input_channel, 3),
-            active_func,
-            nn.Conv2d(input_channel, input_channel, 3),
-            active_func,
-        )
+        if input_height < 15 and input_width < 15:
+            self.cnn = nn.Sequential(
+                nn.Conv2d(input_channel, input_channel, 3),
+                nn.ReLU(),
+                nn.Conv2d(input_channel, input_channel, 3),
+                nn.ReLU(),
+            )
+        else:
+            self.cnn = nn.Sequential(
+                nn.Conv2d(input_channel, input_channel * 2, 2, 2),
+                nn.ReLU(),
+                nn.Conv2d(input_channel * 2, input_channel * 2, 2, 2),
+                nn.ReLU(),
+                nn.Conv2d(input_channel * 2, input_channel * 2, 2, 2),
+                nn.ReLU(),
+            )
 
         dummy_input = torch.randn(obs_shape)
         dummy_output = self.cnn(dummy_input)
         flatten_dim = dummy_output.view(-1).shape[0]
         self.network = nn.Sequential(
             nn.Linear(flatten_dim, 120),
-            active_func,
+            nn.ReLU(),
             nn.Linear(120, 84),
-            active_func,
+            nn.ReLU(),
             nn.Linear(84, hidden_size),
         )
 

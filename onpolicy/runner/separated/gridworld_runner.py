@@ -46,8 +46,6 @@ class GridworldRunner(Runner):
                     actions
                 )
 
-                print("rewards", rewards.shape)
-
                 data = (
                     obs,
                     share_obs,

@@ -1,6 +1,7 @@
 import numpy as np
 from gymnasium import spaces
 import magent2.environments
+import copy
 from magent2.environments.magent_env import magent_parallel_env as Env
 
 
@@ -21,7 +22,7 @@ class MAgentEnv:
         importlib.import_module(f"magent2.environments.{env_id}")
         self.env: Env = eval(f"magent2.environments.{env_id}").env(seed=seed, **kwargs)
         # change this to debug
-        self.env.set_random_enemy(False)
+        self.env.set_random_enemy(True)
         self.n_agents = self.env.n_agents
 
         self.observation_space = spaces.Tuple(
@@ -36,6 +37,10 @@ class MAgentEnv:
         self.share_observation_space = spaces.Tuple(
             [transpose_space(self.env.state_space) for _ in range(self.n_agents)]
         )
+        self.cum_rw = None
+        self.report_sum_rw = [
+            {"cumulative_rewards": np.nan} for _ in range(self.n_agents)
+        ]
 
     def seed(self, seed=None):
         self.env.seed(seed=seed)
@@ -44,27 +49,42 @@ class MAgentEnv:
         obses, _ = self.env.gym_reset()
         state = self.env.state()
         assert len(state.shape) == 3
+        assert len(obses.shape) == 4
         state = np.transpose(state, [2, 0, 1])
         obses = np.transpose(obses, [0, 3, 1, 2])
+
+        if self.cum_rw is not None:
+            for rp, cw in zip(self.report_sum_rw, self.cum_rw):
+                rp["cumulative_rewards"] = cw
+
+        self.cum_rw = np.zeros(self.n_agents, dtype=np.float32)
         return obses, [state] * self.n_agents, None
 
     def step(self, actions):
         actions = actions.astype(np.int32)
         next_obses, rewards, dones, info = self.env.gym_step(actions)
+
         next_obses = np.transpose(next_obses, [0, 3, 1, 2])
         state = self.env.state()
         assert len(state.shape) == 3
         state = np.transpose(state, [2, 0, 1])
 
+        assert np.prod(self.cum_rw.shape) == np.prod(rewards.shape)
+        self.cum_rw += rewards.reshape(self.cum_rw.shape)
+
         if len(dones.shape) == 2:
             dones = dones.squeeze(-1)
 
+        infos = [copy.deepcopy(info) for _ in range(self.n_agents)]
+        for rp, inf in zip(self.report_sum_rw, infos):
+            inf.update(rp)
+
         return (
             next_obses,
-            [state] * self.n_agents,
+            [state] * self.n_agents,  # this is copy by reference
             rewards,
             dones,
-            [info] * self.n_agents,
+            infos,
             None,  # available actions
         )
 
