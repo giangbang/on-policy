@@ -21,6 +21,7 @@ class Runner(object):
         self.all_args = config["all_args"]
         self.envs = config["envs"]
         self.eval_envs = config["eval_envs"]
+        self.vis_envs = config.get("vis_envs", None)
         self.device = config["device"]
         self.num_agents = config["num_agents"]
 
@@ -72,7 +73,10 @@ class Runner(object):
                     os.makedirs(self.save_dir)
 
         print(self.algorithm_name)
-        if self.all_args.algorithm_name == "mappo":
+        if (
+            self.all_args.algorithm_name == "mappo"
+            or self.all_args.algorithm_name == "rmappo"
+        ):
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import (
                 R_MAPPO_MultHead as TrainAlgo,
             )
@@ -123,7 +127,10 @@ class Runner(object):
         self.buffer = []
         for agent_id in range(self.num_agents):
             # algorithm
-            if self.all_args.algorithm_name == "mappo":
+            if (
+                self.all_args.algorithm_name == "mappo"
+                or self.all_args.algorithm_name == "rmappo"
+            ):
                 tr = TrainAlgo(
                     self.all_args,
                     self.policy[agent_id],

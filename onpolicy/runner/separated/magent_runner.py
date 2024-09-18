@@ -42,6 +42,8 @@ class MAgentRunner(Runner):
                     actions
                 )
 
+                # print(set(rewards.flatten().tolist()))
+
                 data = (
                     obs,
                     share_obs,
@@ -125,11 +127,38 @@ class MAgentRunner(Runner):
                         "sum_episode_rewards", avg_sum_rw_all_agents, total_num_steps
                     )
 
+                    # other loggings for mostly debuging purposes
+                    def avg_stats(infos, stat_key):
+                        alls = []
+                        agent_id = 0
+                        for info in infos:
+                            alls.append(info[agent_id][stat_key])
+                        return np.nanmean(alls)
+
+                    print(
+                        "avg kill count (of all agents)", avg_stats(infos, "kill_cnt")
+                    )
+                    print(
+                        "avg correct attack count (of all agents)",
+                        avg_stats(infos, "attack_cnt"),
+                    )
+                    print(
+                        "avg miss attack count (of all agents)",
+                        avg_stats(infos, "attacked_cnt"),
+                    )
+                    print(
+                        "avg dead count (of all agents)", avg_stats(infos, "dead_cnt")
+                    )
+
                 self.log_train(train_infos, total_num_steps)
 
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
                 self.eval(total_num_steps)
+
+            # video logging
+            if episode % (self.eval_interval * 5) == 0:
+                self.render(total_num_steps=total_num_steps)
 
     def warmup(self):
         # reset env
@@ -293,7 +322,7 @@ class MAgentRunner(Runner):
                     eval_obs[:, agent_id],
                     eval_rnn_states[:, agent_id],
                     eval_masks[:, agent_id],
-                    deterministic=True,
+                    deterministic=False,
                 )
                 eval_rnn_states[:, agent_id] = _t2n(temp_rnn_state)
                 eval_actions_collector.append(_t2n(eval_actions))
@@ -346,3 +375,117 @@ class MAgentRunner(Runner):
                 self.log_env(eval_env_infos, total_num_steps)
 
                 break
+
+    @torch.no_grad()
+    def render(self, total_num_steps):
+        assert self.vis_envs is not None
+        render_battles_won = 0
+        render_episode = 0
+
+        render_episode_rewards = []
+        one_episode_rewards = []
+        for render_i in range(1):
+            one_episode_rewards.append([])
+            render_episode_rewards.append([])
+
+        render_obs, render_share_obs, _ = self.vis_envs.reset()
+
+        frames = [self.vis_envs.env.render()]
+
+        render_obs = render_obs[None, ...]
+
+        render_rnn_states = np.zeros(
+            (
+                1,
+                self.num_agents,
+                self.recurrent_N,
+                self.hidden_size,
+            ),
+            dtype=np.float32,
+        )
+        render_masks = np.ones((1, self.num_agents, 1), dtype=np.float32)
+
+        while True:
+            render_actions_collector = []
+            render_rnn_states_collector = []
+            for agent_id in range(self.num_agents):
+                self.trainer[agent_id].prep_rollout()
+                render_actions, temp_rnn_state = self.trainer[agent_id].policy.act(
+                    render_obs[:, agent_id],
+                    render_rnn_states[:, agent_id],
+                    render_masks[:, agent_id],
+                    deterministic=False,
+                )
+                render_rnn_states[:, agent_id] = _t2n(temp_rnn_state)
+                render_actions_collector.append(_t2n(render_actions))
+
+            render_actions = np.array(render_actions_collector).transpose(1, 0, 2)
+
+            # Obser reward and next obs
+            (
+                render_obs,
+                render_share_obs,
+                render_rewards,
+                render_dones,
+                render_infos,
+                render_available_actions,
+            ) = self.vis_envs.step(render_actions[0])
+            render_obs = render_obs[None, ...]
+            render_rewards = render_rewards[None, ...]
+            render_dones = render_dones[None, ...]
+
+            frames.append(self.vis_envs.env.render())
+
+            for render_i in range(1):
+                one_episode_rewards[render_i].append(render_rewards[render_i])
+
+            render_dones_env = np.all(render_dones, axis=1)
+
+            render_rnn_states[render_dones_env == True] = np.zeros(
+                (
+                    (render_dones_env == True).sum(),
+                    self.num_agents,
+                    self.recurrent_N,
+                    self.hidden_size,
+                ),
+                dtype=np.float32,
+            )
+
+            render_masks = np.ones(
+                (1, self.num_agents, 1),
+                dtype=np.float32,
+            )
+            render_masks[render_dones_env == True] = np.zeros(
+                ((render_dones_env == True).sum(), self.num_agents, 1), dtype=np.float32
+            )
+
+            for render_i in range(1):
+                if render_dones_env[render_i]:
+                    render_episode += 1
+                    render_episode_rewards[render_i].append(
+                        np.sum(one_episode_rewards[render_i], axis=0)
+                    )
+                    one_episode_rewards[render_i] = []
+
+            if render_episode >= 1:
+                render_episode_rewards = np.concatenate(render_episode_rewards)
+                break
+
+        import cv2
+
+        height, width, _ = frames[0].shape
+        fps = 20
+        vid_dir = self.run_dir
+
+        out = cv2.VideoWriter(
+            os.path.join(vid_dir, f"record_at_step_{total_num_steps}.mp4"),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (width, height),
+        )
+        for frame in frames:
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            out.write(frame_bgr)
+        out.release()
+
+        print("Done recording video")

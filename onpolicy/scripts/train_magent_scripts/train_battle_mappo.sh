@@ -1,7 +1,7 @@
 #!/bin/sh
 env="MAgent2"
 env_id="battle_v4" 
-algo="rmappo" #"mappo" "ippo"
+algo="mappo" #"mappo" "ippo"
 exp="check"
 seed_max=1
 
@@ -14,7 +14,7 @@ do
     --n_training_threads 1 --n_rollout_threads 16 --num_mini_batch 2 --episode_length 50 --num_env_steps 10000000 \
     --ppo_epoch 5 --use_ReLU --gain 0.01 --lr 1e-4 --critic_lr 3e-4 --wandb_name "xxx" --user_name "giangbang" \
     --share_policy --deterministic_eval --eval_episodes 10 --n_eval_rollout_threads 2 --entropy_coef 0.01 \
-    --clip_param 0.1 --opti_eps 1e-8 --use_centralized_V \
+    --clip_param 0.1 --opti_eps 1e-8 --use_centralized_V --share_policy \
     --gamma 0.95
     #--use_eval
 done

@@ -181,6 +181,8 @@ def main(args):
     print("=" * 10)
     num_agents = tmp_env.n_agents
 
+    vis_envs = MAgentEnv(all_args.env_id, seed=all_args.seed, render_mode="rgb_array")
+
     config = {
         "all_args": all_args,
         "envs": envs,
@@ -188,11 +190,12 @@ def main(args):
         "num_agents": num_agents,
         "device": device,
         "run_dir": run_dir,
+        "vis_envs": vis_envs,
     }
 
     # run experiments
     if all_args.share_policy:
-        from onpolicy.runner.shared.gridworld_runner import GridworldRunner as Runner
+        from onpolicy.runner.shared.magent_runner import MAgentRunner as Runner
     else:
         from onpolicy.runner.separated.magent_runner import MAgentRunner as Runner
 

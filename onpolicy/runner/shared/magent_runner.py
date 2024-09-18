@@ -17,15 +17,13 @@ class MAgentRunner(Runner):
         super(MAgentRunner, self).__init__(config)
 
     def run(self):
+        print(f"Number of agents: {self.num_agents}.")
         self.warmup()
 
         start = time.time()
         episodes = (
             int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
         )
-
-        last_battles_game = np.zeros(self.n_rollout_threads, dtype=np.float32)
-        last_battles_won = np.zeros(self.n_rollout_threads, dtype=np.float32)
 
         for episode in range(episodes):
             if self.use_linear_lr_decay:
@@ -38,17 +36,17 @@ class MAgentRunner(Runner):
                 )
 
                 # Obser reward and next obs
-                obs, share_obs, rewards, dones, infos, available_actions = (
-                    self.envs.step(actions)
+                obs, share_obs, rewards, dones, infos, avail_actions = self.envs.step(
+                    actions
                 )
 
                 data = (
                     obs,
                     share_obs,
-                    rewards,
+                    rewards,  # n_threads x n_agent x 1
                     dones,
                     infos,
-                    available_actions,
+                    avail_actions,
                     values,
                     actions,
                     action_log_probs,
@@ -75,8 +73,8 @@ class MAgentRunner(Runner):
             if episode % self.log_interval == 0:
                 end = time.time()
                 print(
-                    "\n Map {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
-                        self.all_args.map_name,
+                    "\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
+                        self.all_args.env_id,
                         self.algorithm_name,
                         self.experiment_name,
                         episode,
@@ -87,58 +85,75 @@ class MAgentRunner(Runner):
                     )
                 )
 
-                if (
-                    self.env_name == "StarCraft2"
-                    or self.env_name == "SMACv2"
-                    or self.env_name == "SMAC"
-                    or self.env_name == "StarCraft2v2"
-                ):
-                    battles_won = []
-                    battles_game = []
-                    incre_battles_won = []
-                    incre_battles_game = []
+                if self.env_name == "MAgent2":
+                    idv_rews = []
+                    sum_rews = []
+                    for agent_id in range(self.num_agents):
+                        rews = []  # cumulative rewards of agents id on all threads
+                        for info in infos:  # iterate over n threads
+                            if "cumulative_rewards" in info[agent_id].keys():
+                                rews.append(info[agent_id]["cumulative_rewards"])
 
-                    for i, info in enumerate(infos):
-                        if "battles_won" in info[0].keys():
-                            battles_won.append(info[0]["battles_won"])
-                            incre_battles_won.append(
-                                info[0]["battles_won"] - last_battles_won[i]
-                            )
-                        if "battles_game" in info[0].keys():
-                            battles_game.append(info[0]["battles_game"])
-                            incre_battles_game.append(
-                                info[0]["battles_game"] - last_battles_game[i]
-                            )
+                        idv_rews.append(np.nanmean(rews))  # mean rewards over threads
+                        sum_rews.append(np.nanmean(rews))
 
-                    incre_win_rate = (
-                        np.sum(incre_battles_won) / np.sum(incre_battles_game)
-                        if np.sum(incre_battles_game) > 0
-                        else 0.0
+                        train_infos[agent_id].update(
+                            {"average_episode_rewards": idv_rews[agent_id]}
+                        )
+                        print(
+                            "average episode rewards of agent{} is {}".format(
+                                agent_id,
+                                train_infos[agent_id]["average_episode_rewards"],
+                            )
+                        )
+
+                    avg_rw_all_agents = np.nanmean(idv_rews)  # mean rewards over agents
+                    print("Avg rewards all agents:", avg_rw_all_agents)
+
+                    avg_sum_rw_all_agents = np.nansum(
+                        sum_rews
+                    )  # sum rewards over agents
+                    print("Sum rewards all agents:", avg_sum_rw_all_agents)
+
+                    self.writter.add_scalar(
+                        "average_episode_rewards", avg_rw_all_agents, total_num_steps
                     )
-                    print("incre win rate is {}.".format(incre_win_rate))
-                    if self.use_wandb:
-                        wandb.log(
-                            {"incre_win_rate": incre_win_rate}, step=total_num_steps
-                        )
-                    else:
-                        self.writter.add_scalars(
-                            "incre_win_rate",
-                            {"incre_win_rate": incre_win_rate},
-                            total_num_steps,
-                        )
+                    self.writter.add_scalar(
+                        "sum_episode_rewards", avg_sum_rw_all_agents, total_num_steps
+                    )
 
-                    last_battles_game = battles_game
-                    last_battles_won = battles_won
+                    # other loggings for mostly debuging purposes
+                    def avg_stats(infos, stat_key):
+                        alls = []
+                        agent_id = 0
+                        for info in infos:
+                            alls.append(info[agent_id][stat_key])
+                        return np.nanmean(alls)
 
-                train_infos["dead_ratio"] = 1 - self.buffer.active_masks.sum() / reduce(
-                    lambda x, y: x * y, list(self.buffer.active_masks.shape)
-                )
+                    print(
+                        "avg kill count (of all agents)", avg_stats(infos, "kill_cnt")
+                    )
+                    print(
+                        "avg correct attack count (of all agents)",
+                        avg_stats(infos, "attack_cnt"),
+                    )
+                    print(
+                        "avg miss attack count (of all agents)",
+                        avg_stats(infos, "attacked_cnt"),
+                    )
+                    print(
+                        "avg dead count (of all agents)", avg_stats(infos, "dead_cnt")
+                    )
 
                 self.log_train(train_infos, total_num_steps)
 
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
                 self.eval(total_num_steps)
+
+            # video logging
+            if episode % (self.eval_interval * 5) == 0 and self.vis_envs is not None:
+                self.render(total_num_steps=total_num_steps)
 
     def warmup(self):
         # reset env
@@ -150,7 +165,6 @@ class MAgentRunner(Runner):
 
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
-        self.buffer.available_actions[0] = available_actions.copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -162,7 +176,6 @@ class MAgentRunner(Runner):
                 np.concatenate(self.buffer.rnn_states[step]),
                 np.concatenate(self.buffer.rnn_states_critic[step]),
                 np.concatenate(self.buffer.masks[step]),
-                np.concatenate(self.buffer.available_actions[step]),
             )
         )
         # [self.envs, agents, dim]
@@ -241,6 +254,7 @@ class MAgentRunner(Runner):
         if not self.use_centralized_V:
             share_obs = obs
 
+        agent_id = np.tile(np.arange(self.num_agents), self.n_rollout_threads)
         self.buffer.insert(
             share_obs,
             obs,
@@ -253,7 +267,7 @@ class MAgentRunner(Runner):
             masks,
             bad_masks,
             active_masks,
-            available_actions,
+            agent_id=agent_id.reshape(masks.shape),
         )
 
     def log_train(self, train_infos, total_num_steps):
@@ -262,7 +276,7 @@ class MAgentRunner(Runner):
             if self.use_wandb:
                 wandb.log({k: v}, step=total_num_steps)
             else:
-                self.writter.add_scalars(k, {k: v}, total_num_steps)
+                self.writter.add_scalar(k, v, total_num_steps)
 
     @torch.no_grad()
     def eval(self, total_num_steps):
@@ -295,7 +309,6 @@ class MAgentRunner(Runner):
                     np.concatenate(eval_obs),
                     np.concatenate(eval_rnn_states),
                     np.concatenate(eval_masks),
-                    np.concatenate(eval_available_actions),
                     deterministic=True,
                 )
             else:
@@ -303,8 +316,7 @@ class MAgentRunner(Runner):
                     np.concatenate(eval_obs),
                     np.concatenate(eval_rnn_states),
                     np.concatenate(eval_masks),
-                    np.concatenate(eval_available_actions),
-                    deterministic=True,
+                    deterministic=False,
                 )
             eval_actions = np.array(
                 np.split(_t2n(eval_actions), self.n_eval_rollout_threads)
@@ -349,21 +361,10 @@ class MAgentRunner(Runner):
                     eval_episode += 1
                     eval_episode_rewards.append(np.sum(one_episode_rewards, axis=0))
                     one_episode_rewards = []
-                    if eval_infos[eval_i][0]["won"]:
-                        eval_battles_won += 1
 
             if eval_episode >= self.all_args.eval_episodes:
-                eval_episode_rewards = np.array(eval_episode_rewards)
+                eval_episode_rewards = np.concatenate(eval_episode_rewards)
                 eval_env_infos = {"eval_average_episode_rewards": eval_episode_rewards}
                 self.log_env(eval_env_infos, total_num_steps)
-                eval_win_rate = eval_battles_won / eval_episode
-                print("eval win rate is {}.".format(eval_win_rate))
-                if self.use_wandb:
-                    wandb.log({"eval_win_rate": eval_win_rate}, step=total_num_steps)
-                else:
-                    self.writter.add_scalars(
-                        "eval_win_rate",
-                        {"eval_win_rate": eval_win_rate},
-                        total_num_steps,
-                    )
+
                 break
