@@ -19,7 +19,7 @@ class MAgentEnv:
     def __init__(self, env_id, seed, map_size: int = None, **kwargs):
         import importlib
 
-        map_size = 20
+        map_size = 45
 
         importlib.import_module(f"magent2.environments.{env_id}")
         self.env: Env = eval(f"magent2.environments.{env_id}").env(
@@ -27,6 +27,7 @@ class MAgentEnv:
         )
         # change this to debug
         self.env.set_random_enemy(True)
+        self.env.enemy_dont_move = True
         self.n_agents = self.env.n_agents
         self._seed = seed
         print("seed:", self._seed)
@@ -40,9 +41,10 @@ class MAgentEnv:
         self.action_space = spaces.Tuple(
             [self.env.agent_action_space for _ in range(self.n_agents)]
         )
-        self.share_observation_space = spaces.Tuple(
-            [transpose_space(self.env.state_space) for _ in range(self.n_agents)]
-        )
+        # self.share_observation_space = spaces.Tuple(
+        #     [transpose_space(self.env.state_space) for _ in range(self.n_agents)]
+        # )
+        self.share_observation_space = self.observation_space
         self.cum_rw = None
         self.report_rw = [
             {
@@ -93,7 +95,8 @@ class MAgentEnv:
         self.attacked_cnt = np.zeros(self.n_agents, dtype=np.int32)
         self.kill_count = np.zeros(self.n_agents, dtype=np.int32)
         self.dead_cnt = np.zeros(self.n_agents, dtype=np.int32)
-        return obses, [state] * self.n_agents, None
+        # return obses, [state] * self.n_agents, None
+        return obses, obses, None
 
     def step(self, actions):
         actions = actions.astype(np.int32)
@@ -122,14 +125,15 @@ class MAgentEnv:
         for rp, inf in zip(self.report_rw, infos):
             inf.update(rp)
 
-        return (
-            next_obses,
-            [state] * self.n_agents,  # this is copy by reference
-            rewards,
-            dones,
-            infos,
-            None,  # available actions
-        )
+        # return (
+        #     next_obses,
+        #     [state] * self.n_agents,  # this is copy by reference
+        #     rewards,
+        #     dones,
+        #     infos,
+        #     None,  # available actions
+        # )
+        return next_obses, next_obses, rewards, dones, infos, None
 
     def get_avail_actions(self):
         return None

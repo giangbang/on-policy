@@ -1,7 +1,7 @@
 #!/bin/sh
 env="MAgent2"
 env_id="battle_v4" 
-algo="rmappo" #"mappo" "ippo"
+algo="mappo" #"mappo" "ippo"
 exp="check"
 seed_max=1
 

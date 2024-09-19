@@ -3,6 +3,7 @@ import wandb
 import numpy as np
 from functools import reduce
 import torch
+import os
 from onpolicy.runner.shared.base_runner import Runner
 
 
@@ -97,13 +98,17 @@ class MAgentRunner(Runner):
                         idv_rews.append(np.nanmean(rews))  # mean rewards over threads
                         sum_rews.append(np.nanmean(rews))
 
-                        train_infos[agent_id].update(
-                            {"average_episode_rewards": idv_rews[agent_id]}
+                        train_infos.update(
+                            {
+                                f"agent{agent_id}/average_episode_rewards": idv_rews[
+                                    agent_id
+                                ]
+                            }
                         )
                         print(
                             "average episode rewards of agent{} is {}".format(
                                 agent_id,
-                                train_infos[agent_id]["average_episode_rewards"],
+                                train_infos[f"agent{agent_id}/average_episode_rewards"],
                             )
                         )
 
@@ -152,7 +157,7 @@ class MAgentRunner(Runner):
                 self.eval(total_num_steps)
 
             # video logging
-            if episode % (self.eval_interval * 5) == 0 and self.vis_envs is not None:
+            if episode % (self.eval_interval * 4) == 0 and self.vis_envs is not None:
                 self.render(total_num_steps=total_num_steps)
 
     def warmup(self):
@@ -255,6 +260,7 @@ class MAgentRunner(Runner):
             share_obs = obs
 
         agent_id = np.tile(np.arange(self.num_agents), self.n_rollout_threads)
+
         self.buffer.insert(
             share_obs,
             obs,
@@ -368,3 +374,110 @@ class MAgentRunner(Runner):
                 self.log_env(eval_env_infos, total_num_steps)
 
                 break
+
+    @torch.no_grad()
+    def render(self, total_num_steps):
+        assert self.vis_envs is not None
+        render_episode = 0
+
+        render_episode_rewards = []
+        one_episode_rewards = []
+        for render_i in range(1):
+            one_episode_rewards.append([])
+            render_episode_rewards.append([])
+
+        render_obs, render_share_obs, _ = self.vis_envs.reset()
+
+        frames = [self.vis_envs.env.render()]
+
+        render_obs = render_obs[None, ...]
+
+        render_rnn_states = np.zeros(
+            (
+                1,
+                self.num_agents,
+                self.recurrent_N,
+                self.hidden_size,
+            ),
+            dtype=np.float32,
+        )
+        render_masks = np.ones((1, self.num_agents, 1), dtype=np.float32)
+
+        while True:
+            self.trainer.prep_rollout()
+            render_actions, render_rnn_states = self.trainer.policy.act(
+                np.concatenate(render_obs),
+                np.concatenate(render_rnn_states),
+                np.concatenate(render_masks),
+                deterministic=False,
+            )
+            render_actions = np.array(np.split(_t2n(render_actions), 1))
+            render_rnn_states = np.array(np.split(_t2n(render_rnn_states), 1))
+            # Obser reward and next obs
+            (
+                render_obs,
+                render_share_obs,
+                render_rewards,
+                render_dones,
+                render_infos,
+                render_available_actions,
+            ) = self.vis_envs.step(render_actions[0])
+            render_obs = render_obs[None, ...]
+            render_rewards = render_rewards[None, ...]
+            render_dones = render_dones[None, ...]
+
+            frames.append(self.vis_envs.env.render())
+
+            for render_i in range(1):
+                one_episode_rewards[render_i].append(render_rewards[render_i])
+
+            render_dones_env = np.all(render_dones, axis=1)
+
+            render_rnn_states[render_dones_env == True] = np.zeros(
+                (
+                    (render_dones_env == True).sum(),
+                    self.num_agents,
+                    self.recurrent_N,
+                    self.hidden_size,
+                ),
+                dtype=np.float32,
+            )
+
+            render_masks = np.ones(
+                (1, self.num_agents, 1),
+                dtype=np.float32,
+            )
+            render_masks[render_dones_env == True] = np.zeros(
+                ((render_dones_env == True).sum(), self.num_agents, 1), dtype=np.float32
+            )
+
+            for render_i in range(1):
+                if render_dones_env[render_i]:
+                    render_episode += 1
+                    render_episode_rewards[render_i].append(
+                        np.sum(one_episode_rewards[render_i], axis=0)
+                    )
+                    one_episode_rewards[render_i] = []
+
+            if render_episode >= 1:
+                render_episode_rewards = np.concatenate(render_episode_rewards)
+                break
+
+        import cv2
+
+        height, width, _ = frames[0].shape
+        fps = 20
+        vid_dir = self.run_dir
+
+        out = cv2.VideoWriter(
+            os.path.join(vid_dir, f"record_at_step_{total_num_steps}.mp4"),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (width, height),
+        )
+        for frame in frames:
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            out.write(frame_bgr)
+        out.release()
+
+        print("Done recording video")
