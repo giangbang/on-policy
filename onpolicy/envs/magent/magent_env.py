@@ -19,7 +19,7 @@ class MAgentEnv:
     def __init__(self, env_id, seed, map_size: int = None, **kwargs):
         import importlib
 
-        map_size = 45
+        map_size = 22
 
         importlib.import_module(f"magent2.environments.{env_id}")
         self.env: Env = eval(f"magent2.environments.{env_id}").env(
@@ -27,7 +27,7 @@ class MAgentEnv:
         )
         # change this to debug
         self.env.set_random_enemy(True)
-        self.env.enemy_dont_move = True
+        # self.env.enemy_dont_move = True
         self.n_agents = self.env.n_agents
         self._seed = seed
         print("seed:", self._seed)

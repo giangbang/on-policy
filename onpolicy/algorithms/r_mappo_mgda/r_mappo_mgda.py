@@ -6,6 +6,7 @@ import torch.nn as nn
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
+from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy
 from onpolicy.utils.min_norm_solvers import MinNormSolver, gradient_normalizers
 
 
@@ -17,7 +18,7 @@ class R_MAPPO_MGDA:
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
 
-    def __init__(self, args, policy, device=torch.device("cpu")):
+    def __init__(self, args, policy: R_MAPPOPolicy, device=torch.device("cpu")):
 
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)

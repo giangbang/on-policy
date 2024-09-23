@@ -70,7 +70,10 @@ class Runner(object):
                 os.makedirs(self.save_dir)
 
         print(self.algorithm_name)
-        if self.all_args.algorithm_name == "mappo":
+        if (
+            self.all_args.algorithm_name == "mappo"
+            or self.all_args.algorithm_name == "rmappo"
+        ):
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import (
                 R_MAPPO_MultHead as TrainAlgo,
             )
