@@ -237,6 +237,8 @@ class GridworldRunner(Runner):
 
         bad_masks = np.array([[[1.0] for _ in range(self.num_agents)] for _ in infos])
 
+        values = values.reshape(self.buffer[0].value_preds.shape[1:])
+
         for agent_id in range(self.num_agents):
             self.buffer[agent_id].insert(
                 share_obs[:, agent_id],
@@ -245,7 +247,7 @@ class GridworldRunner(Runner):
                 rnn_states_critic[:, agent_id],
                 actions[:, agent_id],
                 action_log_probs[:, agent_id],
-                values[:, agent_id],
+                values,
                 rewards[:, agent_id],
                 masks[:, agent_id],
                 bad_masks[:, agent_id],

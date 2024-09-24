@@ -185,7 +185,6 @@ class R_MAPPO_MultHead:
             agent_id,
         ) = sample
         assert agent_id is not None or self.agent_id is not None
-        # print("agent_id", agent_id)
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
