@@ -26,7 +26,7 @@ class MAgentEnv:
             seed=seed, map_size=map_size, **kwargs
         )
         # change this to debug
-        self.env.set_random_enemy(True)
+        self.env.set_random_enemy(False)
         # self.env.enemy_dont_move = True
         self.n_agents = self.env.n_agents
         self._seed = seed
@@ -41,10 +41,10 @@ class MAgentEnv:
         self.action_space = spaces.Tuple(
             [self.env.agent_action_space for _ in range(self.n_agents)]
         )
-        # self.share_observation_space = spaces.Tuple(
-        #     [transpose_space(self.env.state_space) for _ in range(self.n_agents)]
-        # )
-        self.share_observation_space = self.observation_space
+        self.share_observation_space = spaces.Tuple(
+            [transpose_space(self.env.state_space) for _ in range(self.n_agents)]
+        )
+
         self.cum_rw = None
         self.report_rw = [
             {
@@ -68,7 +68,7 @@ class MAgentEnv:
         self.env.seed(seed=seed)
 
     def reset(self):
-        obses, _ = self.env.gym_reset(self._seed)
+        obses, _ = self.env.gym_reset()
         state = self.env.state()
         assert len(state.shape) == 3
         assert len(obses.shape) == 4
@@ -95,8 +95,8 @@ class MAgentEnv:
         self.attacked_cnt = np.zeros(self.n_agents, dtype=np.int32)
         self.kill_count = np.zeros(self.n_agents, dtype=np.int32)
         self.dead_cnt = np.zeros(self.n_agents, dtype=np.int32)
-        # return obses, [state] * self.n_agents, None
-        return obses, obses, None
+        return obses, [state] * self.n_agents, None
+        # return obses, obses, None
 
     def step(self, actions):
         actions = actions.astype(np.int32)
@@ -105,9 +105,9 @@ class MAgentEnv:
         # test sum rw
         # rewards = np.reshape([np.sum(rewards)] * self.n_agents, rewards.shape)
 
-        self.kill_count += np.sum(rewards == 5)
+        self.kill_count += np.sum(rewards >= 4.95)
         self.attack_cnt += np.sum(rewards > 0.01)
-        self.attacked_cnt += np.sum(rewards < -0.075)
+        self.attacked_cnt += np.sum(rewards < -0.0051)
         self.dead_cnt += np.sum(rewards < -1)
 
         next_obses = np.transpose(next_obses, [0, 3, 1, 2])
@@ -125,15 +125,14 @@ class MAgentEnv:
         for rp, inf in zip(self.report_rw, infos):
             inf.update(rp)
 
-        # return (
-        #     next_obses,
-        #     [state] * self.n_agents,  # this is copy by reference
-        #     rewards,
-        #     dones,
-        #     infos,
-        #     None,  # available actions
-        # )
-        return next_obses, next_obses, rewards, dones, infos, None
+        return (
+            next_obses,
+            [state] * self.n_agents,  # this is copy by reference
+            rewards,
+            dones,
+            infos,
+            None,  # available actions
+        )
 
     def get_avail_actions(self):
         return None

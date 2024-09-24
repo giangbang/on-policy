@@ -1,3 +1,4 @@
+from typing import Union
 import numpy as np
 from torch.autograd import Variable
 import torch
@@ -6,6 +7,8 @@ import torch.nn as nn
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
+
+from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy
 
 
 class R_MAPPO_MultHead:
@@ -19,7 +22,7 @@ class R_MAPPO_MultHead:
     def __init__(
         self,
         args,
-        policy,
+        policy: R_MAPPOPolicy,
         device=torch.device("cpu"),
         agent_id: int = None,
     ):
@@ -28,7 +31,7 @@ class R_MAPPO_MultHead:
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
         self.args = args
-        self.agent_id = agent_id
+        self.agent_id = int(agent_id) if agent_id is not None else None
 
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
@@ -56,14 +59,17 @@ class R_MAPPO_MultHead:
         if self._use_popart:
             self.value_normalizer = self.policy.critic.v_out
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(self.policy.num_agents, device=device).to(
-                self.device
-            )
+            self.value_normalizer = ValueNorm(self.policy.num_agents, device=device)
         else:
             self.value_normalizer = None
 
     def cal_value_loss(
-        self, values, value_preds_batch, return_batch, active_masks_batch
+        self,
+        a: Union[torch.Tensor, int],
+        values: torch.Tensor,
+        value_preds_batch: torch.Tensor,
+        return_batch: torch.Tensor,
+        active_masks_batch: torch.Tensor,
     ):
         """
         Calculate value function loss.
@@ -77,6 +83,10 @@ class R_MAPPO_MultHead:
         assert (
             values.shape == value_preds_batch.shape
         ), f"{values.shape}, {value_preds_batch.shape}"
+        assert (
+            return_batch.shape == values.shape
+        ), f"{return_batch.shape} {values.shape}"
+
         value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(
             -self.clip_param, self.clip_param
         )
@@ -89,6 +99,19 @@ class R_MAPPO_MultHead:
         else:
             error_clipped = return_batch - value_pred_clipped
             error_original = return_batch - values
+
+        if isinstance(a, torch.Tensor) or isinstance(a, np.ndarray):
+            a = a.squeeze()
+            error_clipped = error_clipped[torch.arange(len(a), device=self.device), a]
+            error_original = error_original[torch.arange(len(a), device=self.device), a]
+        elif isinstance(a, int):
+            error_clipped = error_clipped[..., a]
+            error_original = error_original[..., a]
+        else:
+            raise TypeError("what")
+
+        error_clipped = error_clipped.unsqueeze(-1)
+        error_original = error_original.unsqueeze(-1)
 
         if self._use_huber_loss:
             value_loss_clipped = huber_loss(error_clipped, self.huber_delta)
@@ -103,6 +126,11 @@ class R_MAPPO_MultHead:
             value_loss = value_loss_original
 
         if self._use_value_active_masks:
+            assert (
+                value_loss.shape == active_masks_batch.shape
+            ), f"{value_loss.shape} {active_masks_batch.shape}"
+            assert len(value_loss.shape) == 2
+            assert value_loss.shape[-1] == 1
             value_loss = (
                 value_loss * active_masks_batch
             ).sum() / active_masks_batch.sum()
@@ -178,6 +206,7 @@ class R_MAPPO_MultHead:
             available_actions_batch,
             agent_id,
         ) = sample
+        assert agent_id is not None or self.agent_id is not None
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -247,8 +276,9 @@ class R_MAPPO_MultHead:
         self.policy.actor_optimizer.step()
 
         # critic update
+        agent_id = agent_id if agent_id is not None else self.agent_id
         value_loss = self.cal_value_loss(
-            values, value_preds_batch, return_batch, active_masks_batch
+            agent_id, values, value_preds_batch, return_batch, active_masks_batch
         )
 
         self.policy.critic_optimizer.zero_grad()
@@ -316,6 +346,7 @@ class R_MAPPO_MultHead:
             # each update is 10, then after the agent die, in the next 10 steps
             # it still dead because the actual episode is yet to reset.
             # in such case we just ignore these agents
+
             return train_info
 
         for _ in range(self.ppo_epoch):

@@ -268,6 +268,12 @@ class MAgentRunner(Runner):
             ]
         )
 
+        # each agent simultaneously predict rewards of all other agents
+        # but sometime the share_obs of one agent is not enough to correctly regress values
+        # of other agents, so here we take the predicted values as the prediction of the value owners
+        values = values[:, np.arange(self.num_agents), np.arange(self.num_agents)]
+        values = np.reshape(values, self.buffer[0].value_preds.shape[1:])
+
         if not self.use_centralized_V:
             share_obs = obs
 
@@ -280,7 +286,7 @@ class MAgentRunner(Runner):
                 rnn_states_critic[:, agent_id],
                 actions[:, agent_id],
                 action_log_probs[:, agent_id],
-                values[:, agent_id],
+                values,
                 rewards[:, agent_id],
                 masks[:, agent_id],
                 bad_masks[:, agent_id],

@@ -185,6 +185,7 @@ class MAgentRunner(Runner):
         )
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
+
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
         action_log_probs = np.array(
             np.split(_t2n(action_log_prob), self.n_rollout_threads)
@@ -260,6 +261,14 @@ class MAgentRunner(Runner):
             share_obs = obs
 
         agent_id = np.tile(np.arange(self.num_agents), self.n_rollout_threads)
+
+        # each agent simultaneously predict rewards of all other agents
+        # but sometime the share_obs of one agent is not enough to correctly regress values
+        # of other agents, so here we take the predicted values as the prediction of the value owners
+        values = values[:, np.arange(self.num_agents), np.arange(self.num_agents)]
+        assert len(values.shape) == 2
+        values = np.expand_dims(values, axis=1)
+        values = np.repeat(values, self.num_agents, axis=1)
 
         self.buffer.insert(
             share_obs,
