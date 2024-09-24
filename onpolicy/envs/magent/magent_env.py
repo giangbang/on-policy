@@ -68,7 +68,7 @@ class MAgentEnv:
         self.env.seed(seed=seed)
 
     def reset(self):
-        obses, _ = self.env.gym_reset(self._seed)
+        obses, _ = self.env.gym_reset()
         state = self.env.state()
         assert len(state.shape) == 3
         assert len(obses.shape) == 4
@@ -95,8 +95,7 @@ class MAgentEnv:
         self.attacked_cnt = np.zeros(self.n_agents, dtype=np.int32)
         self.kill_count = np.zeros(self.n_agents, dtype=np.int32)
         self.dead_cnt = np.zeros(self.n_agents, dtype=np.int32)
-        # return obses, [state] * self.n_agents, None
-        return obses, obses, None
+        return obses, [state] * self.n_agents, None
 
     def step(self, actions):
         actions = actions.astype(np.int32)
@@ -125,15 +124,14 @@ class MAgentEnv:
         for rp, inf in zip(self.report_rw, infos):
             inf.update(rp)
 
-        # return (
-        #     next_obses,
-        #     [state] * self.n_agents,  # this is copy by reference
-        #     rewards,
-        #     dones,
-        #     infos,
-        #     None,  # available actions
-        # )
-        return next_obses, next_obses, rewards, dones, infos, None
+        return (
+            next_obses,
+            [state] * self.n_agents,  # this is copy by reference
+            rewards,
+            dones,
+            infos,
+            None,  # available actions
+        )
 
     def get_avail_actions(self):
         return None

@@ -7,6 +7,8 @@ from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
 
+from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy
+
 
 class R_MAPPO_MultHead:
     """
@@ -19,7 +21,7 @@ class R_MAPPO_MultHead:
     def __init__(
         self,
         args,
-        policy,
+        policy: R_MAPPOPolicy,
         device=torch.device("cpu"),
         agent_id: int = None,
     ):
@@ -56,14 +58,12 @@ class R_MAPPO_MultHead:
         if self._use_popart:
             self.value_normalizer = self.policy.critic.v_out
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(self.policy.num_agents, device=device).to(
-                self.device
-            )
+            self.value_normalizer = ValueNorm(1, device=device)
         else:
             self.value_normalizer = None
 
     def cal_value_loss(
-        self, values, value_preds_batch, return_batch, active_masks_batch
+        self, a, values, value_preds_batch, return_batch, active_masks_batch
     ):
         """
         Calculate value function loss.
@@ -74,9 +74,15 @@ class R_MAPPO_MultHead:
 
         :return value_loss: (torch.Tensor) value function loss.
         """
+        value_preds_batch = value_preds_batch[..., a].unsqueeze(-1)
+        return_batch = return_batch[..., a].unsqueeze(-1)
         assert (
             values.shape == value_preds_batch.shape
         ), f"{values.shape}, {value_preds_batch.shape}"
+        assert (
+            return_batch.shape == values.shape
+        ), f"{return_batch.shape} {values.shape}"
+
         value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(
             -self.clip_param, self.clip_param
         )
@@ -178,6 +184,8 @@ class R_MAPPO_MultHead:
             available_actions_batch,
             agent_id,
         ) = sample
+        assert agent_id is not None or self.agent_id is not None
+        # print("agent_id", agent_id)
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -247,8 +255,9 @@ class R_MAPPO_MultHead:
         self.policy.actor_optimizer.step()
 
         # critic update
+        agent_id = agent_id if agent_id is not None else self.agent_id
         value_loss = self.cal_value_loss(
-            values, value_preds_batch, return_batch, active_masks_batch
+            agent_id, values, value_preds_batch, return_batch, active_masks_batch
         )
 
         self.policy.critic_optimizer.zero_grad()

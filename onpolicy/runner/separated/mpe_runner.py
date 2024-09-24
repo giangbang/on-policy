@@ -230,6 +230,8 @@ class MPERunner(Runner):
             share_obs.append(list(chain(*o)))
         share_obs = np.array(share_obs)
 
+        values = values.reshape(self.buffer[0].value_preds.shape[1:])
+
         for agent_id in range(self.num_agents):
             if not self.use_centralized_V:
                 share_obs = np.array(list(obs[:, agent_id]))
@@ -241,7 +243,7 @@ class MPERunner(Runner):
                 rnn_states_critic[:, agent_id],
                 actions[:, agent_id],
                 action_log_probs[:, agent_id],
-                values[:, agent_id],
+                values,
                 rewards[:, agent_id],
                 masks[:, agent_id],
             )
