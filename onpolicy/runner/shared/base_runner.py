@@ -100,6 +100,8 @@ class Runner(object):
         print("share_obs_space: ", self.envs.share_observation_space)
         print("act_space: ", self.envs.action_space)
 
+        assert not self.all_args.use_graph, "not support DGN with parameter sharing yet"
+
         # policy network
         if self.algorithm_name == "mat" or self.algorithm_name == "mat_dec":
             self.policy = Policy(

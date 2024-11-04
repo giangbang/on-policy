@@ -127,7 +127,10 @@ class MPERunner(Runner):
             if not self.use_centralized_V:
                 share_obs = np.array(list(obs[:, agent_id]))
             self.buffer[agent_id].share_obs[0] = share_obs.copy()
-            self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
+            if not self.all_args.use_graph:
+                self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
+            else:
+                self.buffer[agent_id].obs[0] = np.array(list(obs)).copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -234,17 +237,30 @@ class MPERunner(Runner):
             if not self.use_centralized_V:
                 share_obs = np.array(list(obs[:, agent_id]))
 
-            self.buffer[agent_id].insert(
-                share_obs,
-                np.array(list(obs[:, agent_id])),
-                rnn_states[:, agent_id],
-                rnn_states_critic[:, agent_id],
-                actions[:, agent_id],
-                action_log_probs[:, agent_id],
-                values[:, agent_id],
-                rewards[:, agent_id],
-                masks[:, agent_id],
-            )
+            if not self.all_args.use_graph:
+                self.buffer[agent_id].insert(
+                    share_obs,
+                    np.array(list(obs[:, agent_id])),
+                    rnn_states[:, agent_id],
+                    rnn_states_critic[:, agent_id],
+                    actions[:, agent_id],
+                    action_log_probs[:, agent_id],
+                    values[:, agent_id],
+                    rewards[:, agent_id],
+                    masks[:, agent_id],
+                )
+            else:
+                self.buffer[agent_id].insert(
+                    share_obs,
+                    np.array(list(obs)),
+                    rnn_states[:, agent_id],
+                    rnn_states_critic[:, agent_id],
+                    actions[:, agent_id],
+                    action_log_probs[:, agent_id],
+                    values[:, agent_id],
+                    rewards[:, agent_id],
+                    masks[:, agent_id],
+                )
 
     @torch.no_grad()
     def eval(self, total_num_steps):

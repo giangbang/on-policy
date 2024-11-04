@@ -4,6 +4,7 @@ from torch.autograd import Variable
 import torch
 import math
 import torch.nn as nn
+from onpolicy.algorithms.r_mappo_mgda.algorithm.rDGN_MAPPOPolicy import RDGN_MAPPOPolicy
 from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
@@ -22,7 +23,7 @@ class R_MAPPO_MultHead:
     def __init__(
         self,
         args,
-        policy: R_MAPPOPolicy,
+        policy: Union[R_MAPPOPolicy, RDGN_MAPPOPolicy],
         device=torch.device("cpu"),
         agent_id: int = None,
     ):

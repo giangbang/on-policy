@@ -80,9 +80,15 @@ class Runner(object):
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mult_head import (
                 R_MAPPO_MultHead as TrainAlgo,
             )
-            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import (
-                R_MAPPOPolicy as Policy,
-            )
+
+            if self.all_args.use_graph:
+                from onpolicy.algorithms.r_mappo_mgda.algorithm.rDGN_MAPPOPolicy import (
+                    RDGN_MAPPOPolicy as Policy,
+                )
+            else:
+                from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import (
+                    R_MAPPOPolicy as Policy,
+                )
         elif (
             self.all_args.algorithm_name == "mappo_mgda"
             or self.all_args.algorithm_name == "mappo_mgdapp"
@@ -90,9 +96,15 @@ class Runner(object):
             from onpolicy.algorithms.r_mappo_mgda.r_mappo_mgda import (
                 R_MAPPO_MGDA as TrainAlgo,
             )
-            from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import (
-                R_MAPPOPolicy as Policy,
-            )
+
+            if self.all_args.use_graph:
+                from onpolicy.algorithms.r_mappo_mgda.algorithm.rDGN_MAPPOPolicy import (
+                    RDGN_MAPPOPolicy as Policy,
+                )
+            else:
+                from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import (
+                    R_MAPPOPolicy as Policy,
+                )
         else:
             raise Exception("not implemented algorithm.")
 
@@ -108,14 +120,25 @@ class Runner(object):
                 else self.envs.observation_space[agent_id]
             )
             # policy network
-            po = Policy(
-                self.all_args,
-                self.envs.observation_space[agent_id],
-                share_observation_space,
-                self.envs.action_space[agent_id],
-                self.num_agents,
-                device=self.device,
-            )
+            if self.all_args.use_graph:
+                po = Policy(
+                    self.all_args,
+                    self.envs.observation_space[agent_id],
+                    share_observation_space,
+                    self.envs.action_space[agent_id],
+                    self.num_agents,
+                    agent_id=agent_id,
+                    device=self.device,
+                )
+            else:
+                po = Policy(
+                    self.all_args,
+                    self.envs.observation_space[agent_id],
+                    share_observation_space,
+                    self.envs.action_space[agent_id],
+                    self.num_agents,
+                    device=self.device,
+                )
             self.policy.append(po)
         print("Actor", self.policy[0].actor)
         print("Critic", self.policy[0].critic)
@@ -145,13 +168,36 @@ class Runner(object):
                 if self.use_centralized_V
                 else self.envs.observation_space[agent_id]
             )
-            bu = SeparatedReplayBuffer(
-                self.all_args,
-                self.envs.observation_space[agent_id],
-                share_observation_space,
-                self.envs.action_space[agent_id],
-                self.num_agents,
-            )
+            if self.all_args.use_graph:
+                from gym import spaces
+
+                # using graph neural net requires one agent to see other agents' observations
+                shape = (self.num_agents,) + tuple(
+                    self.envs.observation_space[agent_id].shape
+                )
+                print("Debug: shape of the shared observation space (DGN only)", shape)
+                print(
+                    "Debug: shape of a single observation space (for DGN only)",
+                    self.envs.observation_space[agent_id].shape,
+                )
+                concat_obses_space = spaces.Box(
+                    low=np.zeros(shape), high=np.ones(shape)
+                )
+                bu = SeparatedReplayBuffer(
+                    self.all_args,
+                    concat_obses_space,
+                    share_observation_space,
+                    self.envs.action_space[agent_id],
+                    self.num_agents,
+                )
+            else:
+                bu = SeparatedReplayBuffer(
+                    self.all_args,
+                    self.envs.observation_space[agent_id],
+                    share_observation_space,
+                    self.envs.action_space[agent_id],
+                    self.num_agents,
+                )
             self.buffer.append(bu)
             self.trainer.append(tr)
 
@@ -171,6 +217,7 @@ class Runner(object):
     def compute(self):
         for agent_id in range(self.num_agents):
             self.trainer[agent_id].prep_rollout()
+
             next_value = self.trainer[agent_id].policy.get_values(
                 self.buffer[agent_id].share_obs[-1],
                 self.buffer[agent_id].rnn_states_critic[-1],

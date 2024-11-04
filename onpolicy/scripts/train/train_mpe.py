@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os
+
 # import wandb
 import socket
 import setproctitle
@@ -13,18 +14,20 @@ from onpolicy.envs.env_wrappers import SubprocVecEnv, DummyVecEnv
 
 """Train script for MPEs."""
 
+
 def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "MPE":
                 env = MPEEnv(all_args)
             else:
-                print("Can not support the " +
-                      all_args.env_name + "environment.")
+                print("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
             env.seed(all_args.seed + rank * 1000)
             return env
+
         return init_env
+
     if all_args.n_rollout_threads == 1:
         return DummyVecEnv([get_env_fn(0)])
     else:
@@ -37,24 +40,30 @@ def make_eval_env(all_args):
             if all_args.env_name == "MPE":
                 env = MPEEnv(all_args)
             else:
-                print("Can not support the " +
-                      all_args.env_name + "environment.")
+                print("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
             env.seed(all_args.seed * 50000 + rank * 10000)
             return env
+
         return init_env
+
     if all_args.n_eval_rollout_threads == 1:
         return DummyVecEnv([get_env_fn(0)])
     else:
-        return SubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
+        return SubprocVecEnv(
+            [get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)]
+        )
 
 
 def parse_args(args, parser):
-    parser.add_argument('--scenario_name', type=str,
-                        default='simple_spread', help="Which scenario to run on")
+    parser.add_argument(
+        "--scenario_name",
+        type=str,
+        default="simple_spread",
+        help="Which scenario to run on",
+    )
     parser.add_argument("--num_landmarks", type=int, default=3)
-    parser.add_argument('--num_agents', type=int,
-                        default=2, help="number of players")
+    parser.add_argument("--num_agents", type=int, default=2, help="number of players")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -70,8 +79,10 @@ def main(args):
         all_args.use_recurrent_policy = True
         all_args.use_naive_recurrent_policy = False
     elif all_args.algorithm_name == "mappo" or "mappo_mgda" in all_args.algorithm_name:
-        print("u are choosing to use mappo, we set use_recurrent_policy & use_naive_recurrent_policy to be False")
-        all_args.use_recurrent_policy = False 
+        print(
+            "u are choosing to use mappo, we set use_recurrent_policy & use_naive_recurrent_policy to be False"
+        )
+        all_args.use_recurrent_policy = False
         all_args.use_naive_recurrent_policy = False
         if all_args.algorithm_name == "mappo_mgdapp":
             all_args.use_mgda = False
@@ -81,8 +92,10 @@ def main(args):
     else:
         raise NotImplementedError
 
-    assert (all_args.share_policy == True and all_args.scenario_name == 'simple_speaker_listener') == False, (
-        "The simple_speaker_listener scenario can not use shared policy. Please check the config.py.")
+    assert (
+        all_args.share_policy == True
+        and all_args.scenario_name == "simple_speaker_listener"
+    ) == False, "The simple_speaker_listener scenario can not use shared policy. Please check the config.py."
 
     # cuda
     if all_args.cuda and torch.cuda.is_available():
@@ -98,40 +111,63 @@ def main(args):
         torch.set_num_threads(all_args.n_training_threads)
 
     # run dir
-    run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
-                   0] + "/results") / all_args.env_name / all_args.scenario_name / all_args.algorithm_name / all_args.experiment_name
+    algo_name = all_args.algorithm_name
+    if all_args.use_graph:
+        algo_name += "_dgn"
+    run_dir = (
+        Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/results")
+        / all_args.env_name
+        / all_args.scenario_name
+        / algo_name
+        / all_args.experiment_name
+    )
     if not run_dir.exists():
         os.makedirs(str(run_dir))
 
     # wandb
     # if all_args.use_wandb:
     if False:
-        run = wandb.init(config=all_args,
-                         project=all_args.env_name,
-                         entity=all_args.user_name,
-                         notes=socket.gethostname(),
-                         name=str(all_args.algorithm_name) + "_" +
-                         str(all_args.experiment_name) +
-                         "_seed" + str(all_args.seed),
-                         group=all_args.scenario_name,
-                         dir=str(run_dir),
-                         job_type="training",
-                         reinit=True)
+        run = wandb.init(
+            config=all_args,
+            project=all_args.env_name,
+            entity=all_args.user_name,
+            notes=socket.gethostname(),
+            name=str(all_args.algorithm_name)
+            + "_"
+            + str(all_args.experiment_name)
+            + "_seed"
+            + str(all_args.seed),
+            group=all_args.scenario_name,
+            dir=str(run_dir),
+            job_type="training",
+            reinit=True,
+        )
     else:
         if not run_dir.exists():
-            curr_run = 'run1'
+            curr_run = "run1"
         else:
-            exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in run_dir.iterdir() if str(folder.name).startswith('run')]
+            exst_run_nums = [
+                int(str(folder.name).split("run")[1])
+                for folder in run_dir.iterdir()
+                if str(folder.name).startswith("run")
+            ]
             if len(exst_run_nums) == 0:
-                curr_run = 'run1'
+                curr_run = "run1"
             else:
-                curr_run = 'run%i' % (max(exst_run_nums) + 1)
+                curr_run = "run%i" % (max(exst_run_nums) + 1)
         run_dir = run_dir / curr_run
         if not run_dir.exists():
             os.makedirs(str(run_dir))
 
-    setproctitle.setproctitle(str(all_args.algorithm_name) + "-" + \
-        str(all_args.env_name) + "-" + str(all_args.experiment_name) + "@" + str(all_args.user_name))
+    setproctitle.setproctitle(
+        str(all_args.algorithm_name)
+        + "-"
+        + str(all_args.env_name)
+        + "-"
+        + str(all_args.experiment_name)
+        + "@"
+        + str(all_args.user_name)
+    )
 
     # seed
     torch.manual_seed(all_args.seed)
@@ -144,11 +180,11 @@ def main(args):
     num_agents = all_args.num_agents
 
     tmp_env = MPEEnv(all_args)
-    print('='*10)
+    print("=" * 10)
     print(tmp_env)
     print(tmp_env.action_space)
     print(tmp_env.action_space[0].sample())
-    print('='*10)
+    print("=" * 10)
 
     config = {
         "all_args": all_args,
@@ -156,7 +192,7 @@ def main(args):
         "eval_envs": eval_envs,
         "num_agents": num_agents,
         "device": device,
-        "run_dir": run_dir
+        "run_dir": run_dir,
     }
 
     # run experiments
@@ -167,7 +203,7 @@ def main(args):
 
     runner = Runner(config)
     runner.run()
-    
+
     # post process
     envs.close()
     if all_args.use_eval and eval_envs is not envs:
@@ -177,7 +213,7 @@ def main(args):
     if False:
         run.finish()
     else:
-        runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
+        runner.writter.export_scalars_to_json(str(runner.log_dir + "/summary.json"))
         runner.writter.close()
 
 

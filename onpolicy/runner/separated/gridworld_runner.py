@@ -134,7 +134,10 @@ class GridworldRunner(Runner):
 
         for agent_id in range(self.num_agents):
             self.buffer[agent_id].share_obs[0] = share_obs[:, agent_id].copy()
-            self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
+            if self.all_args.use_graph:
+                self.buffer[agent_id].obs[0] = obs.copy()
+            else:
+                self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -238,18 +241,32 @@ class GridworldRunner(Runner):
         bad_masks = np.array([[[1.0] for _ in range(self.num_agents)] for _ in infos])
 
         for agent_id in range(self.num_agents):
-            self.buffer[agent_id].insert(
-                share_obs[:, agent_id],
-                np.array(list(obs[:, agent_id])),
-                rnn_states[:, agent_id],
-                rnn_states_critic[:, agent_id],
-                actions[:, agent_id],
-                action_log_probs[:, agent_id],
-                values[:, agent_id],
-                rewards[:, agent_id],
-                masks[:, agent_id],
-                bad_masks[:, agent_id],
-            ),
+            if not self.all_args.use_graph:
+                self.buffer[agent_id].insert(
+                    share_obs[:, agent_id],
+                    np.array(list(obs[:, agent_id])),
+                    rnn_states[:, agent_id],
+                    rnn_states_critic[:, agent_id],
+                    actions[:, agent_id],
+                    action_log_probs[:, agent_id],
+                    values[:, agent_id],
+                    rewards[:, agent_id],
+                    masks[:, agent_id],
+                    bad_masks[:, agent_id],
+                )
+            else:
+                self.buffer[agent_id].insert(
+                    share_obs[:, agent_id],
+                    np.array(list(obs)),  # insert all observation if use graph
+                    rnn_states[:, agent_id],
+                    rnn_states_critic[:, agent_id],
+                    actions[:, agent_id],
+                    action_log_probs[:, agent_id],
+                    values[:, agent_id],
+                    rewards[:, agent_id],
+                    masks[:, agent_id],
+                    bad_masks[:, agent_id],
+                )
 
     @torch.no_grad()
     def eval(self, total_num_steps):
@@ -279,12 +296,20 @@ class GridworldRunner(Runner):
             eval_actions = []
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_rollout()
-                eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(
-                    np.array(list(eval_obs[:, agent_id])),
-                    eval_rnn_states[:, agent_id],
-                    eval_masks[:, agent_id],
-                    deterministic=self.all_args.deterministic_eval,
-                )
+                if not self.all_args.use_graph:
+                    eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(
+                        np.array(list(eval_obs[:, agent_id])),
+                        eval_rnn_states[:, agent_id],
+                        eval_masks[:, agent_id],
+                        deterministic=self.all_args.deterministic_eval,
+                    )
+                else:
+                    eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(
+                        np.array(list(eval_obs)),
+                        eval_rnn_states[:, agent_id],
+                        eval_masks[:, agent_id],
+                        deterministic=self.all_args.deterministic_eval,
+                    )
 
                 eval_action = eval_action.detach().cpu().numpy()
                 eval_actions.append(eval_action)

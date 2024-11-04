@@ -1,9 +1,10 @@
 import torch
-from onpolicy.algorithms.r_mappo_mgda.algorithm.r_actor_critic import R_Actor, R_Critic
+from onpolicy.algorithms.r_mappo_mgda.algorithm.r_actor_critic import R_Critic
+from onpolicy.algorithms.r_mappo_mgda.algorithm.dgn import RDGN_Actor
 from onpolicy.utils.util import update_linear_schedule
 
 
-class R_MAPPOPolicy:
+class RDGN_MAPPOPolicy:
     """
     MAPPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
 
@@ -21,9 +22,12 @@ class R_MAPPOPolicy:
         cent_obs_space,
         act_space,
         num_agents,
+        agent_id: int,
         device=torch.device("cpu"),
     ):
         self.device = device
+        self.agent_id = agent_id
+
         self.lr = args.lr
         self.critic_lr = args.critic_lr
         self.opti_eps = args.opti_eps
@@ -34,7 +38,9 @@ class R_MAPPOPolicy:
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
 
-        self.actor = R_Actor(args, self.obs_space, self.act_space, self.device)
+        self.actor: RDGN_Actor = RDGN_Actor(
+            args, self.obs_space, num_agents, self.act_space, agent_id, self.device
+        )
         self.critic = R_Critic(args, self.share_obs_space, self.num_agents, self.device)
 
         self.actor_optimizer = torch.optim.Adam(
@@ -68,6 +74,7 @@ class R_MAPPOPolicy:
         masks,
         available_actions=None,
         deterministic=False,
+        adj_matrix=None,
     ):
         """
         Compute actions and value function predictions for the given inputs.
@@ -87,7 +94,12 @@ class R_MAPPOPolicy:
         :return rnn_states_critic: (torch.Tensor) updated critic network RNN states.
         """
         actions, action_log_probs, rnn_states_actor = self.actor(
-            obs, rnn_states_actor, masks, available_actions, deterministic
+            obs,
+            rnn_states_actor,
+            masks,
+            available_actions,
+            deterministic,
+            adj_matrix=adj_matrix,
         )
 
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
@@ -115,6 +127,7 @@ class R_MAPPOPolicy:
         masks,
         available_actions=None,
         active_masks=None,
+        adj_matrix=None,
     ):
         """
         Get action logprobs / entropy and value function predictions for actor update.
@@ -133,14 +146,26 @@ class R_MAPPOPolicy:
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         action_log_probs, dist_entropy = self.actor.evaluate_actions(
-            obs, rnn_states_actor, action, masks, available_actions, active_masks
+            obs,
+            rnn_states_actor,
+            action,
+            masks,
+            available_actions,
+            active_masks,
+            adj_matrix=adj_matrix,
         )
 
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values, action_log_probs, dist_entropy
 
     def act(
-        self, obs, rnn_states_actor, masks, available_actions=None, deterministic=False
+        self,
+        obs,
+        rnn_states_actor,
+        masks,
+        available_actions=None,
+        deterministic=False,
+        adj_matrix=None,
     ):
         """
         Compute actions using the given inputs.
@@ -152,6 +177,11 @@ class R_MAPPOPolicy:
         :param deterministic: (bool) whether the action should be mode of distribution or should be sampled.
         """
         actions, _, rnn_states_actor = self.actor(
-            obs, rnn_states_actor, masks, available_actions, deterministic
+            obs,
+            rnn_states_actor,
+            masks,
+            available_actions,
+            deterministic,
+            adj_matrix=adj_matrix,
         )
         return actions, rnn_states_actor
