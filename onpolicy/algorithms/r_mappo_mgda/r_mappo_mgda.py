@@ -7,7 +7,10 @@ from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
 from onpolicy.algorithms.r_mappo_mgda.algorithm.rMAPPOPolicy import R_MAPPOPolicy
+from onpolicy.algorithms.r_mappo_mgda.algorithm.rDGN_MAPPOPolicy import RDGN_MAPPOPolicy
 from onpolicy.utils.min_norm_solvers import MinNormSolver, gradient_normalizers
+
+from typing import Union
 
 
 class R_MAPPO_MGDA:
@@ -18,7 +21,12 @@ class R_MAPPO_MGDA:
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
 
-    def __init__(self, args, policy: R_MAPPOPolicy, device=torch.device("cpu")):
+    def __init__(
+        self,
+        args,
+        policy: Union[R_MAPPOPolicy, RDGN_MAPPOPolicy],
+        device=torch.device("cpu"),
+    ):
 
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
