@@ -108,6 +108,9 @@ class MPERunner(Runner):
 
                     avg_rw_all_agents = np.mean(idv_rews)
                     print("Avg rewards all agents:", avg_rw_all_agents)
+                    self.writter.add_scalar(
+                        "average_episode_rewards", avg_rw_all_agents, total_num_steps
+                    )
                 self.log_train(train_infos, total_num_steps)
 
             # eval
@@ -284,12 +287,20 @@ class MPERunner(Runner):
             eval_temp_actions_env = []
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_rollout()
-                eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(
-                    np.array(list(eval_obs[:, agent_id])),
-                    eval_rnn_states[:, agent_id],
-                    eval_masks[:, agent_id],
-                    deterministic=self.all_args.deterministic_eval,
-                )
+                if not self.all_args.use_graph:
+                    eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(
+                        np.array(list(eval_obs[:, agent_id])),
+                        eval_rnn_states[:, agent_id],
+                        eval_masks[:, agent_id],
+                        deterministic=self.all_args.deterministic_eval,
+                    )
+                else:
+                    eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(
+                        np.array(list(eval_obs)),
+                        eval_rnn_states[:, agent_id],
+                        eval_masks[:, agent_id],
+                        deterministic=self.all_args.deterministic_eval,
+                    )
 
                 eval_action = eval_action.detach().cpu().numpy()
                 # rearrange action

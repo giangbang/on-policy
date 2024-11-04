@@ -220,6 +220,7 @@ class RDGN_Actor(nn.Module):
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
+        assert len(obs.shape) >= 3, obs.shape
         actor_features = self.base(obs)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
