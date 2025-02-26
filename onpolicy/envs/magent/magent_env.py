@@ -26,7 +26,7 @@ class MAgentEnv:
             seed=seed, map_size=map_size, **kwargs
         )
         # change this to debug
-        self.env.set_random_enemy(False)
+        self.env.set_random_enemy(True)
         # self.env.enemy_dont_move = True
         self.n_agents = self.env.n_agents
         self._seed = seed
